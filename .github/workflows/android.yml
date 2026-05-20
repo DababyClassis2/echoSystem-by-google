@@ -1,0 +1,39 @@
+name: Android CI (Professional Polish Build)
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Validate Gradle Wrapper
+      # In case there's no gradlew, we setup gradle wrapper
+      run: gradle wrapper || echo "Gradle is already configured"
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew || echo "No gradlew found to chmod"
+
+    - name: Build with Gradle
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        arguments: assembleDebug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug-apk
+        path: app/build/outputs/apk/debug/app-debug.apk

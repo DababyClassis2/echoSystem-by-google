@@ -84,21 +84,12 @@ fun OnboardingScreen(
                 .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Visual decorative container
-            Surface(
-                modifier = Modifier.size(140.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+            // Visual decorative container with Professional Premium Metallic Vault logo
+            Box(
+                modifier = Modifier.padding(bottom = 12.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = currentData.icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(64.dp)
-                    )
-                }
+                EnterpriseVaultLogo(size = 150.dp)
             }
 
             Spacer(Modifier.height(32.dp))
@@ -252,27 +243,13 @@ fun HomeScreen(
 
                     Spacer(Modifier.height(16.dp))
 
-                    // Pulse circles container
+                    // Pulse circles container with elegant EnterpriseVaultLogo nested
                     Box(
                         modifier = Modifier.size(160.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         RadarAnimation(isActive = isScanning) {
-                            Surface(
-                                shape = CircleShape,
-                                modifier = Modifier.size(60.dp),
-                                color = if (isScanning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                                border = BorderStroke(2.dp, MaterialTheme.colorScheme.background)
-                            ) {
-                                Icon(
-                                    imageVector = if (isScanning) Icons.Rounded.Radar else Icons.Rounded.Stop,
-                                    contentDescription = null,
-                                    tint = if (isScanning) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .padding(14.dp)
-                                )
-                            }
+                            EnterpriseVaultLogo(size = 80.dp)
                         }
                     }
 
