@@ -20,6 +20,16 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
+    - name: Preflight Keystore Setup
+      run: |
+        if [ -f "debug.keystore.base64" ]; then
+          echo "Found debug.keystore.base64. Decoding..."
+          base64 -d debug.keystore.base64 > debug.keystore
+        else
+          echo "debug.keystore.base64 not found. Provisioning a standard debug.keystore via keytool..."
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        fi
+
     - name: Validate Gradle Wrapper
       # In case there's no gradlew, we setup gradle wrapper
       run: gradle wrapper || echo "Gradle is already configured"
