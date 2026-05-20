@@ -1,0 +1,6 @@
+{
+  "name": "EchoSystem",
+  "description": "Peer-to-peer secure local file sharing for Android devices on the same network.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
