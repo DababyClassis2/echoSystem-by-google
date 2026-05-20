@@ -2,6 +2,8 @@ package com.example.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.model.*
@@ -11,6 +13,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -47,7 +54,7 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
     private val _requirePairing = MutableStateFlow(sharedPrefs.getBoolean("require_pairing", true))
     val requirePairing = _requirePairing.asStateFlow()
 
-    // Devices (Static reference of all possibilities)
+    // Devices (Static reference of all possibilities for simulation)
     private val allAvailableDevices = listOf(
         Device("d1", "MacBook Pro M3", "192.168.1.101", 8080, false, listOf("nsd"), 0.92f, "macOS Sonoma"),
         Device("d2", "Galaxy S24 Ultra", "192.168.1.42", 8081, false, listOf("ble", "nsd", "udp"), 0.78f, "Android 14 (OneUI)"),
@@ -61,7 +68,7 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         sharedPrefs.getStringSet("paired_ids", emptySet()) ?: emptySet()
     )
 
-    // Current discovered devices list in the UI (scanned-in dependently)
+    // Current discovered devices list in the UI (scanned-in dynamically)
     private val _devicesList = MutableStateFlow<List<Device>>(emptyList())
     val devicesList = _devicesList.asStateFlow()
 
@@ -109,9 +116,538 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
     private var pairingJob: Job? = null
     private var transferJobs = mutableMapOf<String, Job>()
 
+    // REAL NETWORK VARIABLES & STACK
+    private var tcpServerSocket: ServerSocket? = null
+    private var activeServerPort = 8080
+    private val localUniqueId = UUID.randomUUID().toString().take(6)
+    private val realDiscoveredDevices = mutableMapOf<String, Device>()
+
+    // Core network networking coroutine jobs
+    private var tcpServerJob: Job? = null
+    private var udpReceiveJob: Job? = null
+    private var udpSendJob: Job? = null
+    private var nsdManager: NsdManager? = null
+    private var nsdRegistrationListener: NsdManager.RegistrationListener? = null
+    private var nsdDiscoveryListener: NsdManager.DiscoveryListener? = null
+
     init {
+        startRealNetworkServices()
         startScanningSimulation()
     }
+
+    // ==========================================
+    // REAL NETWORK SERVICE DISCOVERY AND SOCKETS
+    // ==========================================
+    private fun startRealNetworkServices() {
+        // 1. Fire up background TCP Socket Server for incoming files
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val server = ServerSocket(0) // Allocate dynamic free port automatically
+                tcpServerSocket = server
+                activeServerPort = server.localPort
+                android.util.Log.d("EchoNetwork", "TCP Server successfully listening on port $activeServerPort")
+                
+                // Spawn acceptance processing loop
+                runTcpServerAcceptLoop(server)
+            } catch (e: Exception) {
+                android.util.Log.e("EchoNetwork", "Failed to start TCP Server Socket: ${e.message}")
+            }
+        }
+
+        // 2. Start Wireless UDP Peer discovery broadcaster and receiver
+        startUdpDiscovery()
+
+        // 3. Start local Network Service Discovery (mDNS) registration & scanner
+        startNsdServices()
+    }
+
+    private fun runTcpServerAcceptLoop(server: ServerSocket) {
+        tcpServerJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            while (true) {
+                try {
+                    val socket = server.accept() ?: break
+                    android.util.Log.d("EchoNetwork", "Inbound socket connection from target ${socket.inetAddress}")
+                    handleIncomingConnection(socket)
+                } catch (e: Exception) {
+                    android.util.Log.d("EchoNetwork", "Server socket terminated or closed: ${e.message}")
+                    break
+                }
+            }
+        }
+    }
+
+    private fun handleIncomingConnection(socket: Socket) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val inputStream = socket.getInputStream()
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(inputStream))
+                
+                val headerLine = reader.readLine()
+                if (headerLine != null && headerLine.startsWith("ECHO_FILE_HEADER|")) {
+                    // Header Protocol format: ECHO_FILE_HEADER|sessionId|senderDeviceName|fileListCsv
+                    val parts = headerLine.split("|")
+                    if (parts.size >= 4) {
+                        val sessionId = parts[1]
+                        val senderName = parts[2]
+                        val fileListCsv = parts[3]
+                        
+                        val remoteIp = socket.inetAddress?.hostAddress ?: "127.0.0.1"
+                        
+                        // Treat as professional Real Device
+                        val senderDevice = Device(
+                            id = "real_$remoteIp",
+                            name = senderName,
+                            ip = remoteIp,
+                            port = socket.port,
+                            protocols = listOf("udp", "nsd"),
+                            signalStrength = 0.95f,
+                            osName = "Active Network Node"
+                        )
+                        
+                        // Parse files csv
+                        val transferItems = fileListCsv.split(",").filter { it.contains(":") }.map { fileToken ->
+                            val tokenParts = fileToken.split(":")
+                            val fileName = tokenParts[0]
+                            val fileSize = tokenParts[1].toLongOrNull() ?: 1024L
+                            TransferItem(
+                                id = UUID.randomUUID().toString(),
+                                name = fileName,
+                                sizeBytes = fileSize
+                            )
+                        }
+                        
+                        if (transferItems.isNotEmpty()) {
+                            val session = TransferSession(
+                                id = sessionId,
+                                remoteDevice = senderDevice,
+                                isSending = false,
+                                files = transferItems,
+                                status = SessionStatus.ONGOING,
+                                currentSpeedBytesPerSecond = 0
+                            )
+                            
+                            _transferSessions.update { it + session }
+                            
+                            // Read stream in chunks to represent progress
+                            val buffer = ByteArray(1024 * 32)
+                            var lastUpdateTime = System.currentTimeMillis()
+                            var bytesInPeriod = 0L
+                            
+                            for (item in transferItems) {
+                                var itemBytesRead = 0L
+                                while (itemBytesRead < item.sizeBytes) {
+                                    val toRead = minOf(item.sizeBytes - itemBytesRead, buffer.size.toLong()).toInt()
+                                    val read = inputStream.read(buffer, 0, toRead)
+                                    if (read == -1) break
+                                    itemBytesRead += read
+                                    bytesInPeriod += read
+                                    
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastUpdateTime >= 300) {
+                                        val timeDiffSecs = (now - lastUpdateTime) / 1000.0
+                                        val calculatedSpeed = if (timeDiffSecs > 0) (bytesInPeriod / timeDiffSecs).toLong() else 0L
+                                        
+                                        updateReceivingProgress(sessionId, item.id, itemBytesRead, calculatedSpeed)
+                                        lastUpdateTime = now
+                                        bytesInPeriod = 0
+                                    }
+                                }
+                                updateReceivingProgress(sessionId, item.id, item.sizeBytes, 0L)
+                            }
+                            markSessionFinished(sessionId, SessionStatus.SUCCESS)
+                        }
+                    }
+                }
+                socket.close()
+            } catch (e: Exception) {
+                android.util.Log.e("EchoNetwork", "Error processing incoming data: ${e.message}")
+            }
+        }
+    }
+
+    private fun startRealFileTransferSession(device: Device, files: List<LocalFile>) {
+        val sessionId = UUID.randomUUID().toString()
+        val items = files.map { file ->
+            TransferItem(UUID.randomUUID().toString(), file.name, file.sizeBytes)
+        }
+        val session = TransferSession(sessionId, device, isSending = true, files = items)
+        
+        _transferSessions.update { it + session }
+        clearSelections()
+        
+        val job = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            var socket: Socket? = null
+            try {
+                android.util.Log.d("EchoNetwork", "Connecting real client stream to target ${device.ip}:${device.port}")
+                socket = java.net.Socket()
+                socket.connect(java.net.InetSocketAddress(device.ip, device.port), 5500)
+                
+                val outputStream = socket.getOutputStream()
+                val writer = java.io.BufferedWriter(java.io.OutputStreamWriter(outputStream))
+                
+                // Handshake payload structure: ECHO_FILE_HEADER|sessionId|senderDeviceName|fileListCsv
+                val fileCsv = files.joinToString(",") { "${it.name}:${it.sizeBytes}" }
+                writer.write("ECHO_FILE_HEADER|$sessionId|${_localDeviceName.value}|$fileCsv\n")
+                writer.flush()
+                
+                // Stream actual simulated payloads
+                val buf = ByteArray(1024 * 32)
+                var lastUpdateTime = System.currentTimeMillis()
+                var bytesInPeriod = 0L
+                
+                for (item in items) {
+                    var fileBytesSent = 0L
+                    while (fileBytesSent < item.sizeBytes) {
+                        val toWrite = minOf(item.sizeBytes - fileBytesSent, buf.size.toLong()).toInt()
+                        outputStream.write(buf, 0, toWrite)
+                        fileBytesSent += toWrite
+                        bytesInPeriod += toWrite
+                        
+                        val now = System.currentTimeMillis()
+                        if (now - lastUpdateTime >= 300) {
+                            val timeDiffSecs = (now - lastUpdateTime) / 1000.0
+                            val calculatedSpeed = if (timeDiffSecs > 0) (bytesInPeriod / timeDiffSecs).toLong() else 0L
+                            
+                            updateSendingProgress(sessionId, item.id, fileBytesSent, calculatedSpeed)
+                            lastUpdateTime = now
+                            bytesInPeriod = 0
+                        }
+                        delay(2) // keep UI/emulator interactive
+                    }
+                    updateSendingProgress(sessionId, item.id, item.sizeBytes, 0L)
+                }
+                outputStream.flush()
+                markSessionFinished(sessionId, SessionStatus.SUCCESS)
+            } catch (e: Exception) {
+                android.util.Log.e("EchoNetwork", "Real connection stream failed: ${e.message}")
+                markSessionFinished(sessionId, SessionStatus.FAILED)
+            } finally {
+                try {
+                    socket?.close()
+                } catch (ignored: Exception) {}
+            }
+        }
+        transferJobs[sessionId] = job
+    }
+
+    private fun startUdpDiscovery() {
+        udpReceiveJob?.cancel()
+        udpReceiveJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            var socket: DatagramSocket? = null
+            try {
+                socket = DatagramSocket(null).apply {
+                    reuseAddress = true
+                    bind(java.net.InetSocketAddress(8899))
+                }
+                val buffer = ByteArray(1024)
+                while (true) {
+                    val packet = DatagramPacket(buffer, buffer.size)
+                    socket.receive(packet)
+                    
+                    val text = String(packet.data, 0, packet.length, java.nio.charset.StandardCharsets.UTF_8).trim()
+                    if (text.startsWith("ECHO_PING|")) {
+                        val parts = text.split("|")
+                        if (parts.size >= 5) {
+                            val uid = parts[1]
+                            val name = parts[2]
+                            val ip = parts[3]
+                            val port = parts[4].toIntOrNull() ?: 8080
+                            
+                            // Filter out loopback discovering oneself
+                            if (uid != localUniqueId) {
+                                val senderIp = packet.address?.hostAddress ?: ip
+                                val device = Device(
+                                    id = "real_${uid}",
+                                    name = name,
+                                    ip = senderIp,
+                                    port = port,
+                                    protocols = listOf("udp", "nsd"),
+                                    signalStrength = 0.94f,
+                                    osName = "UDP Broadcast Node"
+                                )
+                                viewModelScope.launch {
+                                    realDiscoveredDevices[uid] = device
+                                    filterAndPopulateDevices()
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("EchoNetwork", "UDP receiver exception: ${e.message}")
+            } finally {
+                socket?.close()
+            }
+        }
+
+        udpSendJob?.cancel()
+        udpSendJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            var socket: DatagramSocket? = null
+            try {
+                socket = DatagramSocket()
+                socket.broadcast = true
+                
+                while (true) {
+                    if (_isScanning.value && (_protocols.value[Protocol.UDP] == true)) {
+                        val payload = "ECHO_PING|${localUniqueId}|${_localDeviceName.value}|${getLocalIpAddress()}|${activeServerPort}"
+                        val bytes = payload.toByteArray(java.nio.charset.StandardCharsets.UTF_8)
+                        
+                        // Send broadcast packet to subnet
+                        val packet = DatagramPacket(
+                            bytes,
+                            bytes.size,
+                            InetAddress.getByName("255.255.255.255"),
+                            8899
+                        )
+                        socket.send(packet)
+                        
+                        // Local loopback packets for quick mock validation on same client emulators
+                        val backPacket = DatagramPacket(
+                            bytes,
+                            bytes.size,
+                            InetAddress.getByName("127.0.0.1"),
+                            8899
+                        )
+                        socket.send(backPacket)
+                    }
+                    delay(3000)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("EchoNetwork", "UDP transmitter exception: ${e.message}")
+            } finally {
+                socket?.close()
+            }
+        }
+    }
+
+    private fun startNsdServices() {
+        val app = getApplication<Application>()
+        val manager = app.getSystemService(Context.NSD_SERVICE) as? NsdManager ?: return
+        nsdManager = manager
+
+        // Register our local service with mDNS/NSD service type
+        val serviceInfo = NsdServiceInfo().apply {
+            serviceName = "Echo_${_localDeviceName.value}_${localUniqueId}"
+            serviceType = "_echosystem._tcp"
+            setPort(activeServerPort)
+        }
+
+        nsdRegistrationListener = object : NsdManager.RegistrationListener {
+            override fun onServiceRegistered(registeredServiceInfo: NsdServiceInfo) {
+                android.util.Log.d("EchoNSD", "Successfully Registered: ${registeredServiceInfo.serviceName}")
+            }
+
+            override fun onRegistrationFailed(failedServiceInfo: NsdServiceInfo, errorCode: Int) {
+                android.util.Log.e("EchoNSD", "Failed to Register: $errorCode")
+            }
+
+            override fun onServiceUnregistered(unregisteredServiceInfo: NsdServiceInfo) {}
+            override fun onUnregistrationFailed(unregisteredServiceInfo: NsdServiceInfo, errorCode: Int) {}
+        }
+
+        try {
+            manager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, nsdRegistrationListener)
+        } catch (e: Exception) {
+            android.util.Log.e("EchoNSD", "NSD register error: ${e.message}")
+        }
+
+        startNsdDiscovery()
+    }
+
+    private fun startNsdDiscovery() {
+        val manager = nsdManager ?: return
+        
+        nsdDiscoveryListener = object : NsdManager.DiscoveryListener {
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                android.util.Log.e("EchoNSD", "Discovery failed: $errorCode")
+                try {
+                    manager.stopServiceDiscovery(this)
+                } catch (e: Exception) {}
+            }
+
+            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
+
+            override fun onDiscoveryStarted(serviceType: String) {
+                android.util.Log.d("EchoNSD", "NSD scan active")
+            }
+
+            override fun onDiscoveryStopped(serviceType: String) {}
+
+            override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+                if (serviceInfo.serviceType == "_echosystem._tcp" || serviceInfo.serviceType.startsWith("_echosystem")) {
+                    if (serviceInfo.serviceName.contains(localUniqueId)) {
+                        return
+                    }
+                    
+                    try {
+                        manager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+                            override fun onResolveFailed(resolveServiceInfo: NsdServiceInfo, errorCode: Int) {}
+
+                            override fun onServiceResolved(resolvedServiceInfo: NsdServiceInfo) {
+                                val rawName = resolvedServiceInfo.serviceName
+                                val elegantName = rawName.substringBeforeLast("_").substringAfter("Echo_")
+                                val suffixId = rawName.substringAfterLast("_")
+                                
+                                val peerIp = resolvedServiceInfo.host?.hostAddress ?: "127.0.0.1"
+                                val peerPort = resolvedServiceInfo.port
+                                
+                                val device = Device(
+                                    id = "real_${suffixId}",
+                                    name = elegantName,
+                                    ip = peerIp,
+                                    port = peerPort,
+                                    protocols = listOf("nsd", "udp"),
+                                    signalStrength = 0.99f,
+                                    osName = "mDNS / NSD Node"
+                                )
+                                
+                                viewModelScope.launch {
+                                    realDiscoveredDevices[suffixId] = device
+                                    filterAndPopulateDevices()
+                                }
+                            }
+                        })
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+
+            override fun onServiceLost(serviceInfo: NsdServiceInfo) {
+                val serviceName = serviceInfo.serviceName
+                val suffixId = serviceName.substringAfterLast("_")
+                viewModelScope.launch {
+                    realDiscoveredDevices.remove(suffixId)
+                    filterAndPopulateDevices()
+                }
+            }
+        }
+
+        try {
+            manager.discoverServices("_echosystem._tcp", NsdManager.PROTOCOL_DNS_SD, nsdDiscoveryListener)
+        } catch (e: Exception) {
+            android.util.Log.e("EchoNSD", "NSD scan error: ${e.message}")
+        }
+    }
+
+    private fun stopNsdDiscoveryAndRegistration() {
+        val manager = nsdManager ?: return
+        try {
+            val reg = nsdRegistrationListener
+            if (reg != null) {
+                manager.unregisterService(reg)
+            }
+        } catch (ignored: Exception) {}
+        try {
+            val disc = nsdDiscoveryListener
+            if (disc != null) {
+                manager.stopServiceDiscovery(disc)
+            }
+        } catch (ignored: Exception) {}
+        nsdRegistrationListener = null
+        nsdDiscoveryListener = null
+    }
+
+    fun getLocalIpAddress(): String {
+        try {
+            val interfaces = Collections.list(java.net.NetworkInterface.getNetworkInterfaces())
+            for (networkInterface in interfaces) {
+                val addresses = Collections.list(networkInterface.inetAddresses)
+                for (address in addresses) {
+                    if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
+                        return address.hostAddress ?: "127.0.0.1"
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return "127.0.0.1"
+    }
+
+    private fun updateReceivingProgress(sessionId: String, itemId: String, progress: Long, speed: Long) {
+        _transferSessions.update { list ->
+            list.map { s ->
+                if (s.id == sessionId) {
+                    val updatedFiles = s.files.map { f ->
+                        if (f.id == itemId) {
+                            f.copy(progressBytes = progress, isCompleted = progress >= f.sizeBytes)
+                        } else {
+                            f
+                        }
+                    }
+                    s.copy(
+                        files = updatedFiles,
+                        currentSpeedBytesPerSecond = speed,
+                        secondsElapsed = s.secondsElapsed + 1
+                    )
+                } else {
+                    s
+                }
+            }
+        }
+    }
+
+    private fun updateSendingProgress(sessionId: String, itemId: String, progress: Long, speed: Long) {
+        _transferSessions.update { list ->
+            list.map { s ->
+                if (s.id == sessionId) {
+                    val updatedFiles = s.files.map { f ->
+                        if (f.id == itemId) {
+                            f.copy(progressBytes = progress, isCompleted = progress >= f.sizeBytes)
+                        } else {
+                            f
+                        }
+                    }
+                    s.copy(
+                        files = updatedFiles,
+                        currentSpeedBytesPerSecond = speed,
+                        secondsElapsed = s.secondsElapsed + 1
+                    )
+                } else {
+                    s
+                }
+            }
+        }
+    }
+
+    private fun markSessionFinished(sessionId: String, finalStatus: SessionStatus) {
+        _transferSessions.update { list ->
+            list.map { s ->
+                if (s.id == sessionId) {
+                    s.copy(
+                        status = finalStatus,
+                        currentSpeedBytesPerSecond = 0
+                    )
+                } else {
+                    s
+                }
+            }
+        }
+        
+        // Log to history
+        val s = _transferSessions.value.firstOrNull { it.id == sessionId }
+        if (s != null) {
+            val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
+            val timeStr = formatter.format(Date())
+            val rec = HistoryRecord(
+                id = UUID.randomUUID().toString(),
+                deviceName = s.remoteDevice.name,
+                isSent = s.isSending,
+                fileNameSummary = if (s.files.size == 1) s.files[0].name else "${s.files[0].name} (+${s.files.size - 1} more)",
+                totalSize = s.totalBytes,
+                timeString = timeStr,
+                isSuccess = finalStatus == SessionStatus.SUCCESS,
+                speedString = s.speedFormatted,
+                durationSeconds = s.secondsElapsed
+            )
+            _historyRecords.update { listOf(rec) + it }
+        }
+    }
+
+    // ==========================================
+    // OTHER STANDARD VIEWMODEL METHODS
+    // ==========================================
 
     fun completeOnboarding() {
         _hasCompletedOnboarding.value = true
@@ -126,6 +662,10 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
     fun setLocalDeviceName(name: String) {
         _localDeviceName.value = name
         sharedPrefs.edit().putString("device_name", name).apply()
+        
+        // Re-register to announce named changes
+        stopNsdDiscoveryAndRegistration()
+        startNsdServices()
     }
 
     fun setAutoAccept(auto: Boolean) {
@@ -144,7 +684,6 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
             updated[protocol] = !(current[protocol] ?: true)
             updated
         }
-        // Force refresh devices based on active protocols
         filterAndPopulateDevices()
     }
 
@@ -163,8 +702,12 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         _isScanning.value = nextState
         if (nextState) {
             startScanningSimulation()
+            startUdpDiscovery()
+            startNsdDiscovery()
         } else {
             scanJob?.cancel()
+            stopNsdDiscoveryAndRegistration()
+            udpReceiveJob?.cancel()
             _devicesList.value = emptyList()
         }
     }
@@ -178,7 +721,6 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         scanJob?.cancel()
         scanJob = viewModelScope.launch {
             _isScanning.value = true
-            // Periodically add devices that match the enabled protocols
             _devicesList.value = emptyList()
             var index = 0
             while (index < allAvailableDevices.size) {
@@ -194,27 +736,34 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         val activeProtocolsList = _protocols.value.filterValues { it }.keys.map { it.id }
         val pairedIds = _pairedDeviceIds.value
 
-        val filtered = allAvailableDevices.take(limit).filter { candidate ->
-            // Match if candidate device shares at least one active protocol
+        val filteredSimulated = allAvailableDevices.take(limit).filter { candidate ->
             candidate.protocols.any { it in activeProtocolsList }
         }.map { device ->
-            // Decorate with paired flag
             device.copy(isPaired = device.id in pairedIds)
         }
-        _devicesList.value = filtered
+
+        val filteredReal = realDiscoveredDevices.values.filter { candidate ->
+            candidate.protocols.any { it in activeProtocolsList }
+        }.map { device ->
+            device.copy(isPaired = device.id in pairedIds)
+        }
+
+        _devicesList.value = filteredReal + filteredSimulated
     }
 
-    // Connect & Start sharing
     fun initiateSendToDevice(device: Device) {
         val selectedFiles = _allFiles.value.filter { it.id in _selectedFileIds.value }
         if (selectedFiles.isEmpty()) return
 
-        // Check if pairing is required and not yet paired
         val isPaired = device.id in _pairedDeviceIds.value
         if (_requirePairing.value && !isPaired) {
             startPairingHandshake(device, selectedFiles)
         } else {
-            startFileTransferSession(device, selectedFiles, isSending = true)
+            if (device.id.startsWith("real_")) {
+                startRealFileTransferSession(device, selectedFiles)
+            } else {
+                startFileTransferSession(device, selectedFiles, isSending = true)
+            }
         }
     }
 
@@ -235,7 +784,6 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
-            // Expired
             _activePairing.value = null
         }
     }
@@ -247,20 +795,21 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         pairingJob?.cancel()
         _activePairing.value = null
 
-        // Save pair status
         val updatedSet = _pairedDeviceIds.value + device.id
         _pairedDeviceIds.value = updatedSet
         sharedPrefs.edit().putStringSet("paired_ids", updatedSet).apply()
 
-        // Update current device items
         _devicesList.update { list ->
             list.map { if (it.id == device.id) it.copy(isPaired = true) else it }
         }
 
-        // Now trigger the pending file transfer
         val selectedFiles = _allFiles.value.filter { it.id in _selectedFileIds.value }
         if (selectedFiles.isNotEmpty()) {
-            startFileTransferSession(device, selectedFiles, isSending = true)
+            if (device.id.startsWith("real_")) {
+                startRealFileTransferSession(device, selectedFiles)
+            } else {
+                startFileTransferSession(device, selectedFiles, isSending = true)
+            }
         }
     }
 
@@ -278,7 +827,6 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Trigger dummy receiving file to simulate inbound requests beautifully
     fun simulateInboundTransferRandom() {
         viewModelScope.launch {
             val sender = allAvailableDevices.random()
@@ -286,10 +834,8 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
                 LocalFile("in_f1", "IMG_Party_Share.jpg", 3450322, "Images", "Today"),
                 LocalFile("in_f2", "EchoSystem_Guide.pdf", 5242880, "Documents", "Today")
             )
-            // Just simulate acceptance directly or pairing if required
             val isPaired = sender.id in _pairedDeviceIds.value
             if (_requirePairing.value && !isPaired) {
-                // Instantly pop a pairing handshake
                 startPairingHandshake(sender, emptyList())
             } else {
                 startFileTransferSession(sender, incomingFiles, isSending = false)
@@ -305,20 +851,17 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         val session = TransferSession(sessionId, device, isSending, items)
 
         _transferSessions.update { it + session }
-        clearSelections() // Reset chosen files
+        clearSelections()
 
-        // Process this session in a simulated coroutine Job
         val job = viewModelScope.launch {
-            var speedBytes = (1024 * 1024 * 1.5).toLong() // Starting at 1.5MB/s
+            var speedBytes = (1024 * 1024 * 1.5).toLong()
             var elapsedSeconds = 0
 
-            // Loop to feed bytes
             while (true) {
-                delay(500) // update twice per second
+                delay(500)
                 var hasUnfinished = false
                 elapsedSeconds++
 
-                // Adjust speed dynamically a bit
                 val drift = (-900_000..1_100_000).random()
                 speedBytes = (speedBytes + drift).coerceIn((1024 * 1024 * 1.0).toLong(), (1024 * 1024 * 4.8).toLong())
 
@@ -334,8 +877,7 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
                                 if (item.isCompleted) return@map item
                                 hasUnfinished = true
 
-                                // Give this item some bytes
-                                val increment = speedBytes / 2 // since we tick every 500ms
+                                val increment = speedBytes / 2
                                 val nextProgress = (item.progressBytes + increment).coerceAtMost(item.sizeBytes)
                                 
                                 item.copy(
@@ -357,14 +899,12 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // Check termination conditions
                 val currentSession = _transferSessions.value.firstOrNull { it.id == sessionId }
                 if (currentSession == null || currentSession.status == SessionStatus.SUCCESS || currentSession.status == SessionStatus.FAILED) {
                     break
                 }
             }
 
-            // Session completed, log into history
             val finSession = _transferSessions.value.firstOrNull { it.id == sessionId }
             if (finSession != null) {
                 val sumBytes = finSession.totalBytes
@@ -409,7 +949,6 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         transferJobs[sessionId]?.cancel()
         transferJobs.remove(sessionId)
 
-        // Find session to log failure
         val s = _transferSessions.value.firstOrNull { it.id == sessionId }
         if (s != null) {
             val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -441,6 +980,17 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         scanJob?.cancel()
         pairingJob?.cancel()
         transferJobs.values.forEach { it.cancel() }
+        
+        udpReceiveJob?.cancel()
+        udpSendJob?.cancel()
+        tcpServerJob?.cancel()
+        
+        stopNsdDiscoveryAndRegistration()
+        
+        try {
+            tcpServerSocket?.close()
+        } catch (ignored: Exception) {}
+        
         super.onCleared()
     }
 }
