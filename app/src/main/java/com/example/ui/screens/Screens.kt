@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -285,22 +287,6 @@ fun HomeScreen(
                                 )
                             )
                         }
-
-                        // Highly functional simulation inbound receive
-                        OutlinedButton(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                viewModel.simulateInboundTransferRandom()
-                            },
-                            shape = PillShape,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                        ) {
-                            Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Simulate Inbound", style = MaterialTheme.typography.labelLarge)
-                        }
                     }
                 }
             }
@@ -407,6 +393,14 @@ fun FileBrowserScreen(
 
     var showSendDeviceSheet by remember { mutableStateOf(false) }
 
+    val pickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.importFiles(uris)
+        }
+    }
+
     // Sort/filter files based on active tab
     val filteredFiles = remember(selectedCategory, fileList) {
         if (selectedCategory == "All") fileList else fileList.filter { it.category == selectedCategory }
@@ -441,7 +435,51 @@ fun FileBrowserScreen(
                 }
             }
 
-            // Document Lists & Visual Grids
+            if (fileList.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.FolderOpen,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(72.dp)
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = "No Files Imported Yet",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Import physical files from local storage to instantly stream them to nearby devices in real time.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    Button(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            pickerLauncher.launch("*/*")
+                        },
+                        shape = PillShape,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Add Real Files to Share")
+                    }
+                }
+            } else {
+                // Document Lists & Visual Grids
             if (selectedCategory == "Images") {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
@@ -601,7 +639,8 @@ fun FileBrowserScreen(
                     }
                 }
             }
-        }
+        } // Close else for fileList.isEmpty()
+    } // Close outer Column
 
         // FLOATING ACTION FOOTER OVERLAY
         AnimatedVisibility(

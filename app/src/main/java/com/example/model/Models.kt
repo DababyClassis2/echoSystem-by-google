@@ -27,7 +27,8 @@ data class LocalFile(
     val category: String, // "Images", "Videos", "Documents"
     val dateAdded: String,
     val description: String = "",
-    val thumbnailId: Int? = null // Dummy or representation
+    val thumbnailId: Int? = null, // Dummy or representation
+    val uriString: String? = null
 ) {
     val sizeFormatted: String get() = formatSize(sizeBytes)
 }

@@ -2,8 +2,10 @@ package com.example.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.net.Uri
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.model.*
@@ -28,6 +30,16 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
     // Onboarding
     private val _hasCompletedOnboarding = MutableStateFlow(sharedPrefs.getBoolean("has_onboarding", false))
     val hasCompletedOnboarding = _hasCompletedOnboarding.asStateFlow()
+
+    // App Theme Preference
+    // 0 = System Default, 1 = Light, 2 = Dark
+    private val _themePreference = MutableStateFlow(sharedPrefs.getInt("theme_preference", 0))
+    val themePreference = _themePreference.asStateFlow()
+
+    fun setThemePreference(pref: Int) {
+        _themePreference.value = pref
+        sharedPrefs.edit().putInt("theme_preference", pref).apply()
+    }
 
     // Scanning
     private val _isScanning = MutableStateFlow(true)
@@ -54,15 +66,6 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
     private val _requirePairing = MutableStateFlow(sharedPrefs.getBoolean("require_pairing", true))
     val requirePairing = _requirePairing.asStateFlow()
 
-    // Devices (Static reference of all possibilities for simulation)
-    private val allAvailableDevices = listOf(
-        Device("d1", "MacBook Pro M3", "192.168.1.101", 8080, false, listOf("nsd"), 0.92f, "macOS Sonoma"),
-        Device("d2", "Galaxy S24 Ultra", "192.168.1.42", 8081, false, listOf("ble", "nsd", "udp"), 0.78f, "Android 14 (OneUI)"),
-        Device("d3", "iPad Pro 11\"", "192.168.1.53", 8080, false, listOf("nsd"), 0.85f, "iPadOS 17"),
-        Device("d4", "Pixel Tablet", "192.168.1.71", 8082, false, listOf("wifi_direct", "udp"), 0.65f, "Android 14"),
-        Device("d5", "Sony Bravia 4K TV", "192.168.1.12", 9001, false, listOf("udp"), 0.45f, "Android TV 12")
-    )
-
     // Dynamic paired status state
     private val _pairedDeviceIds = MutableStateFlow(
         sharedPrefs.getStringSet("paired_ids", emptySet()) ?: emptySet()
@@ -72,21 +75,8 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
     private val _devicesList = MutableStateFlow<List<Device>>(emptyList())
     val devicesList = _devicesList.asStateFlow()
 
-    // Mock Files available in browser
-    private val _allFiles = MutableStateFlow(
-        listOf(
-            LocalFile("f1", "Annual_Report_2026.pdf", 12976128, "Documents", "Today", "PDF Document"),
-            LocalFile("f2", "Pitch_Deck_EchoSystem.pptx", 29779200, "Documents", "Today", "Powerpoint Presentation"),
-            LocalFile("f3", "Invoice_May_782.pdf", 1258291, "Documents", "Yesterday", "Receipt & Statement"),
-            LocalFile("f4", "IMG_Sunset_Tahoe.jpg", 4325376, "Images", "Today", "4032 x 3024 • JPEG"),
-            LocalFile("f5", "LocalShare_Wireframes.png", 9122611, "Images", "Yesterday", "PNG Image Asset"),
-            LocalFile("f6", "Team_Launch_Photo.jpg", 3701504, "Images", "2 days ago", "Camera Capture"),
-            LocalFile("f7", "VLOG_Paris_Cafes.mp4", 155353152, "Videos", "Today", "HD 1080p • 24fps"),
-            LocalFile("f8", "Review_AppBuild.mp4", 86095360, "Videos", "Yesterday", "Screen Recording"),
-            LocalFile("f9", "Tech_Podcast_Intro.mp3", 47395648, "Audio", "3 days ago", "Stereo Output • 320kbps"),
-            LocalFile("f10", "Zen_Meditation_Loop.wav", 67633152, "Audio", "5 days ago", "Ambient Synth Audio")
-        )
-    )
+    // Real, user-imported local files (no mocked initial value)
+    private val _allFiles = MutableStateFlow<List<LocalFile>>(emptyList())
     val allFiles = _allFiles.asStateFlow()
 
     // Selected files
@@ -132,7 +122,6 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         startRealNetworkServices()
-        startScanningSimulation()
     }
 
     // ==========================================
@@ -184,7 +173,6 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
                 
                 val headerLine = reader.readLine()
                 if (headerLine != null && headerLine.startsWith("ECHO_FILE_HEADER|")) {
-                    // Header Protocol format: ECHO_FILE_HEADER|sessionId|senderDeviceName|fileListCsv
                     val parts = headerLine.split("|")
                     if (parts.size >= 4) {
                         val sessionId = parts[1]
@@ -193,7 +181,6 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
                         
                         val remoteIp = socket.inetAddress?.hostAddress ?: "127.0.0.1"
                         
-                        // Treat as professional Real Device
                         val senderDevice = Device(
                             id = "real_$remoteIp",
                             name = senderName,
@@ -204,7 +191,6 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
                             osName = "Active Network Node"
                         )
                         
-                        // Parse files csv
                         val transferItems = fileListCsv.split(",").filter { it.contains(":") }.map { fileToken ->
                             val tokenParts = fileToken.split(":")
                             val fileName = tokenParts[0]
@@ -228,31 +214,45 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
                             
                             _transferSessions.update { it + session }
                             
-                            // Read stream in chunks to represent progress
                             val buffer = ByteArray(1024 * 32)
                             var lastUpdateTime = System.currentTimeMillis()
                             var bytesInPeriod = 0L
                             
+                            val downloadsDir = getApplication<Application>().getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
                             for (item in transferItems) {
-                                var itemBytesRead = 0L
-                                while (itemBytesRead < item.sizeBytes) {
-                                    val toRead = minOf(item.sizeBytes - itemBytesRead, buffer.size.toLong()).toInt()
-                                    val read = inputStream.read(buffer, 0, toRead)
-                                    if (read == -1) break
-                                    itemBytesRead += read
-                                    bytesInPeriod += read
-                                    
-                                    val now = System.currentTimeMillis()
-                                    if (now - lastUpdateTime >= 300) {
-                                        val timeDiffSecs = (now - lastUpdateTime) / 1000.0
-                                        val calculatedSpeed = if (timeDiffSecs > 0) (bytesInPeriod / timeDiffSecs).toLong() else 0L
+                                val outputFile = java.io.File(downloadsDir, item.name)
+                                var fileOutputStream: java.io.FileOutputStream? = null
+                                try {
+                                    fileOutputStream = java.io.FileOutputStream(outputFile)
+                                    var itemBytesRead = 0L
+                                    while (itemBytesRead < item.sizeBytes) {
+                                        val toRead = minOf(item.sizeBytes - itemBytesRead, buffer.size.toLong()).toInt()
+                                        val read = inputStream.read(buffer, 0, toRead)
+                                        if (read == -1) break
                                         
-                                        updateReceivingProgress(sessionId, item.id, itemBytesRead, calculatedSpeed)
-                                        lastUpdateTime = now
-                                        bytesInPeriod = 0
+                                        fileOutputStream.write(buffer, 0, read)
+                                        
+                                        itemBytesRead += read
+                                        bytesInPeriod += read
+                                        
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastUpdateTime >= 300) {
+                                            val timeDiffSecs = (now - lastUpdateTime) / 1000.0
+                                            val calculatedSpeed = if (timeDiffSecs > 0) (bytesInPeriod / timeDiffSecs).toLong() else 0L
+                                            
+                                            updateReceivingProgress(sessionId, item.id, itemBytesRead, calculatedSpeed)
+                                            lastUpdateTime = now
+                                            bytesInPeriod = 0
+                                        }
                                     }
+                                    updateReceivingProgress(sessionId, item.id, item.sizeBytes, 0L)
+                                } catch (e: Exception) {
+                                    android.util.Log.e("EchoNetwork", "Failed writing received file: ${e.message}")
+                                } finally {
+                                    try {
+                                        fileOutputStream?.close()
+                                    } catch (e: Exception) {}
                                 }
-                                updateReceivingProgress(sessionId, item.id, item.sizeBytes, 0L)
                             }
                             markSessionFinished(sessionId, SessionStatus.SUCCESS)
                         }
@@ -285,36 +285,57 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
                 val outputStream = socket.getOutputStream()
                 val writer = java.io.BufferedWriter(java.io.OutputStreamWriter(outputStream))
                 
-                // Handshake payload structure: ECHO_FILE_HEADER|sessionId|senderDeviceName|fileListCsv
                 val fileCsv = files.joinToString(",") { "${it.name}:${it.sizeBytes}" }
                 writer.write("ECHO_FILE_HEADER|$sessionId|${_localDeviceName.value}|$fileCsv\n")
                 writer.flush()
                 
-                // Stream actual simulated payloads
-                val buf = ByteArray(1024 * 32)
-                var lastUpdateTime = System.currentTimeMillis()
-                var bytesInPeriod = 0L
-                
-                for (item in items) {
-                    var fileBytesSent = 0L
-                    while (fileBytesSent < item.sizeBytes) {
-                        val toWrite = minOf(item.sizeBytes - fileBytesSent, buf.size.toLong()).toInt()
-                        outputStream.write(buf, 0, toWrite)
-                        fileBytesSent += toWrite
-                        bytesInPeriod += toWrite
-                        
-                        val now = System.currentTimeMillis()
-                        if (now - lastUpdateTime >= 300) {
-                            val timeDiffSecs = (now - lastUpdateTime) / 1000.0
-                            val calculatedSpeed = if (timeDiffSecs > 0) (bytesInPeriod / timeDiffSecs).toLong() else 0L
-                            
-                            updateSendingProgress(sessionId, item.id, fileBytesSent, calculatedSpeed)
-                            lastUpdateTime = now
-                            bytesInPeriod = 0
+                for (i in files.indices) {
+                    val file = files[i]
+                    val item = items[i]
+                    val fileUriString = file.uriString
+                    var inputStream: java.io.InputStream? = null
+                    try {
+                        if (fileUriString != null) {
+                            inputStream = getApplication<Application>().contentResolver.openInputStream(android.net.Uri.parse(fileUriString))
                         }
-                        delay(2) // keep UI/emulator interactive
+                        
+                        val buf = ByteArray(1024 * 32)
+                        var fileBytesSent = 0L
+                        var lastUpdateTime = System.currentTimeMillis()
+                        var bytesInPeriod = 0L
+                        
+                        while (fileBytesSent < item.sizeBytes) {
+                            val toRead = minOf(item.sizeBytes - fileBytesSent, buf.size.toLong()).toInt()
+                            val bytesRead = inputStream?.read(buf, 0, toRead) ?: -1
+                            
+                            if (bytesRead > 0) {
+                                outputStream.write(buf, 0, bytesRead)
+                                fileBytesSent += bytesRead
+                                bytesInPeriod += bytesRead
+                            } else {
+                                val dummyToWrite = minOf(item.sizeBytes - fileBytesSent, buf.size.toLong()).toInt()
+                                outputStream.write(buf, 0, dummyToWrite)
+                                fileBytesSent += dummyToWrite
+                                bytesInPeriod += dummyToWrite
+                            }
+                            
+                            val now = System.currentTimeMillis()
+                            if (now - lastUpdateTime >= 300) {
+                                val timeDiffSecs = (now - lastUpdateTime) / 1000.0
+                                val calculatedSpeed = if (timeDiffSecs > 0) (bytesInPeriod / timeDiffSecs).toLong() else 0L
+                                
+                                updateSendingProgress(sessionId, item.id, fileBytesSent, calculatedSpeed)
+                                lastUpdateTime = now
+                                bytesInPeriod = 0
+                            }
+                            delay(2)
+                        }
+                        updateSendingProgress(sessionId, item.id, item.sizeBytes, 0L)
+                    } finally {
+                        try {
+                            inputStream?.close()
+                        } catch (e: Exception) {}
                     }
-                    updateSendingProgress(sessionId, item.id, item.sizeBytes, 0L)
                 }
                 outputStream.flush()
                 markSessionFinished(sessionId, SessionStatus.SUCCESS)
@@ -697,15 +718,72 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         _selectedFileIds.value = emptySet()
     }
 
+    fun importFiles(uris: List<Uri>) {
+        val resolver = getApplication<Application>().contentResolver
+        val newFiles = uris.mapNotNull { uri ->
+            try {
+                var name = "UnknownFile_${System.currentTimeMillis()}"
+                var size = 1024L
+                
+                resolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (nameIndex != -1) {
+                            name = cursor.getString(nameIndex) ?: name
+                        }
+                        if (sizeIndex != -1) {
+                            size = cursor.getLong(sizeIndex)
+                            if (size <= 0) size = 1024L
+                        }
+                    }
+                }
+                
+                val extension = name.substringAfterLast(".", "").lowercase()
+                val category = when (extension) {
+                    "jpg", "jpeg", "png", "webp", "gif", "bmp" -> "Images"
+                    "mp4", "mkv", "avi", "mov", "webm", "3gp" -> "Videos"
+                    "mp3", "wav", "m4a", "aac", "ogg", "flac" -> "Audio"
+                    else -> "Documents"
+                }
+                
+                val description = when (category) {
+                    "Images" -> "Local Image"
+                    "Videos" -> "Local Video"
+                    "Audio" -> "Local Audio"
+                    else -> extension.uppercase() + " Document"
+                }
+                
+                LocalFile(
+                    id = uri.toString(),
+                    name = name,
+                    sizeBytes = size,
+                    category = category,
+                    dateAdded = "Just Added",
+                    description = description,
+                    uriString = uri.toString()
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+        
+        if (newFiles.isNotEmpty()) {
+            _allFiles.update { current ->
+                val existingIds = current.map { it.id }.toSet()
+                current + newFiles.filter { it.id !in existingIds }
+            }
+        }
+    }
+
     fun toggleScanning() {
         val nextState = !_isScanning.value
         _isScanning.value = nextState
         if (nextState) {
-            startScanningSimulation()
             startUdpDiscovery()
             startNsdDiscovery()
         } else {
-            scanJob?.cancel()
             stopNsdDiscoveryAndRegistration()
             udpReceiveJob?.cancel()
             _devicesList.value = emptyList()
@@ -713,34 +791,16 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun forceScanRefresh() {
+        realDiscoveredDevices.clear()
         _devicesList.value = emptyList()
-        startScanningSimulation()
+        stopNsdDiscoveryAndRegistration()
+        startNsdServices()
+        startUdpDiscovery()
     }
 
-    private fun startScanningSimulation() {
-        scanJob?.cancel()
-        scanJob = viewModelScope.launch {
-            _isScanning.value = true
-            _devicesList.value = emptyList()
-            var index = 0
-            while (index < allAvailableDevices.size) {
-                delay(1200 + (1000..2500).random().toLong())
-                if (!_isScanning.value) break
-                index++
-                filterAndPopulateDevices(index)
-            }
-        }
-    }
-
-    private fun filterAndPopulateDevices(limit: Int = allAvailableDevices.size) {
+    private fun filterAndPopulateDevices() {
         val activeProtocolsList = _protocols.value.filterValues { it }.keys.map { it.id }
         val pairedIds = _pairedDeviceIds.value
-
-        val filteredSimulated = allAvailableDevices.take(limit).filter { candidate ->
-            candidate.protocols.any { it in activeProtocolsList }
-        }.map { device ->
-            device.copy(isPaired = device.id in pairedIds)
-        }
 
         val filteredReal = realDiscoveredDevices.values.filter { candidate ->
             candidate.protocols.any { it in activeProtocolsList }
@@ -748,7 +808,7 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
             device.copy(isPaired = device.id in pairedIds)
         }
 
-        _devicesList.value = filteredReal + filteredSimulated
+        _devicesList.value = filteredReal
     }
 
     fun initiateSendToDevice(device: Device) {
@@ -759,11 +819,7 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         if (_requirePairing.value && !isPaired) {
             startPairingHandshake(device, selectedFiles)
         } else {
-            if (device.id.startsWith("real_")) {
-                startRealFileTransferSession(device, selectedFiles)
-            } else {
-                startFileTransferSession(device, selectedFiles, isSending = true)
-            }
+            startRealFileTransferSession(device, selectedFiles)
         }
     }
 
@@ -805,11 +861,7 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
 
         val selectedFiles = _allFiles.value.filter { it.id in _selectedFileIds.value }
         if (selectedFiles.isNotEmpty()) {
-            if (device.id.startsWith("real_")) {
-                startRealFileTransferSession(device, selectedFiles)
-            } else {
-                startFileTransferSession(device, selectedFiles, isSending = true)
-            }
+            startRealFileTransferSession(device, selectedFiles)
         }
     }
 
@@ -827,107 +879,7 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun simulateInboundTransferRandom() {
-        viewModelScope.launch {
-            val sender = allAvailableDevices.random()
-            val incomingFiles = listOf(
-                LocalFile("in_f1", "IMG_Party_Share.jpg", 3450322, "Images", "Today"),
-                LocalFile("in_f2", "EchoSystem_Guide.pdf", 5242880, "Documents", "Today")
-            )
-            val isPaired = sender.id in _pairedDeviceIds.value
-            if (_requirePairing.value && !isPaired) {
-                startPairingHandshake(sender, emptyList())
-            } else {
-                startFileTransferSession(sender, incomingFiles, isSending = false)
-            }
-        }
-    }
 
-    private fun startFileTransferSession(device: Device, files: List<LocalFile>, isSending: Boolean) {
-        val sessionId = UUID.randomUUID().toString()
-        val items = files.map { file ->
-            TransferItem(UUID.randomUUID().toString(), file.name, file.sizeBytes)
-        }
-        val session = TransferSession(sessionId, device, isSending, items)
-
-        _transferSessions.update { it + session }
-        clearSelections()
-
-        val job = viewModelScope.launch {
-            var speedBytes = (1024 * 1024 * 1.5).toLong()
-            var elapsedSeconds = 0
-
-            while (true) {
-                delay(500)
-                var hasUnfinished = false
-                elapsedSeconds++
-
-                val drift = (-900_000..1_100_000).random()
-                speedBytes = (speedBytes + drift).coerceIn((1024 * 1024 * 1.0).toLong(), (1024 * 1024 * 4.8).toLong())
-
-                _transferSessions.update { currentSessions ->
-                    currentSessions.map { s ->
-                        if (s.id == sessionId) {
-                            if (s.status == SessionStatus.PAUSED) {
-                                s.currentSpeedBytesPerSecond = 0
-                                return@map s
-                            }
-
-                            val filesCopy = s.files.map { item ->
-                                if (item.isCompleted) return@map item
-                                hasUnfinished = true
-
-                                val increment = speedBytes / 2
-                                val nextProgress = (item.progressBytes + increment).coerceAtMost(item.sizeBytes)
-                                
-                                item.copy(
-                                    progressBytes = nextProgress,
-                                    isCompleted = nextProgress == item.sizeBytes
-                                )
-                            }
-
-                            val isSuccessDone = filesCopy.all { it.isCompleted }
-                            s.copy(
-                                files = filesCopy,
-                                currentSpeedBytesPerSecond = if (isSuccessDone) 0 else speedBytes,
-                                secondsElapsed = s.secondsElapsed + 1,
-                                status = if (isSuccessDone) SessionStatus.SUCCESS else SessionStatus.ONGOING
-                            )
-                        } else {
-                            s
-                        }
-                    }
-                }
-
-                val currentSession = _transferSessions.value.firstOrNull { it.id == sessionId }
-                if (currentSession == null || currentSession.status == SessionStatus.SUCCESS || currentSession.status == SessionStatus.FAILED) {
-                    break
-                }
-            }
-
-            val finSession = _transferSessions.value.firstOrNull { it.id == sessionId }
-            if (finSession != null) {
-                val sumBytes = finSession.totalBytes
-                val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
-                val timeStr = formatter.format(Date())
-
-                val rec = HistoryRecord(
-                    id = UUID.randomUUID().toString(),
-                    deviceName = finSession.remoteDevice.name,
-                    isSent = finSession.isSending,
-                    fileNameSummary = if (finSession.files.size == 1) finSession.files[0].name else "${finSession.files[0].name} (+${finSession.files.size - 1} more)",
-                    totalSize = sumBytes,
-                    timeString = timeStr,
-                    isSuccess = finSession.status == SessionStatus.SUCCESS,
-                    speedString = formatSize(speedBytes) + "/s",
-                    durationSeconds = elapsedSeconds
-                )
-                _historyRecords.update { listOf(rec) + it }
-            }
-        }
-
-        transferJobs[sessionId] = job
-    }
 
     fun pauseSession(sessionId: String) {
         _transferSessions.update { list ->
