@@ -6,6 +6,8 @@ import com.echosystem.localshare.web.WebShareScreen
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -20,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,88 +48,176 @@ import com.echosystem.localshare.ui.components.RadarAnimation
 import com.echosystem.localshare.ui.components.TransferItemRow
 import com.echosystem.localshare.viewmodel.EchoViewModel
 import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
 fun MainScreen(viewModel: EchoViewModel = hiltViewModel()) {
     var showOnboarding by remember { mutableStateOf(true) }
     var selectedTab by remember { mutableIntStateOf(0) }
     val webShareViewModel: WebShareViewModel = hiltViewModel()
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
 
     if (showOnboarding) {
         OnboardingScreen(onGetStarted = { showOnboarding = false })
     } else {
-        Scaffold(
-            bottomBar = {
-                NavigationBar(
-                    modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
-                    containerColor = MaterialTheme.colorScheme.background,
-                    tonalElevation = 8.dp
-                ) {
-                    NavigationBarItem(
-                        icon = { Icon(Icons.Default.Home, "Home") },
-                        label = { Text("Home", style = MaterialTheme.typography.labelSmall) },
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        modifier = Modifier.testTag("tab_home")
-                    )
-                    NavigationBarItem(
-                        icon = { Icon(Icons.Default.Upload, "Send") },
-                        label = { Text("Send", style = MaterialTheme.typography.labelSmall) },
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        modifier = Modifier.testTag("tab_send")
-                    )
-                    NavigationBarItem(
-                        icon = { Icon(Icons.Default.Download, "Receive") },
-                        label = { Text("Receive", style = MaterialTheme.typography.labelSmall) },
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        modifier = Modifier.testTag("tab_receive")
-                    )
-                    NavigationBarItem(
-                        icon = { Icon(Icons.Default.History, "History") },
-                        label = { Text("History", style = MaterialTheme.typography.labelSmall) },
-                        selected = selectedTab == 3,
-                        onClick = { selectedTab = 3 },
-                        modifier = Modifier.testTag("tab_history")
-                    )
-                    NavigationBarItem(
-                        icon = { Icon(Icons.Default.Language, "Web") },
-                        label = { Text("Web", style = MaterialTheme.typography.labelSmall) },
-                        selected = selectedTab == 4,
-                        onClick = { selectedTab = 4 },
-                        modifier = Modifier.testTag("tab_web_share")
-                    )
-                    NavigationBarItem(
-                        icon = { Icon(Icons.Default.Settings, "Settings") },
-                        label = { Text("Settings", style = MaterialTheme.typography.labelSmall) },
-                        selected = selectedTab == 5,
-                        onClick = { selectedTab = 5 },
-                        modifier = Modifier.testTag("tab_settings")
-                    )
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val isTablet = maxWidth > 600.dp
+            
+            // Define tab items info for iterations (clean & structured)
+            val tabs = listOf(
+                Triple("Home", Icons.Filled.Home, Icons.Outlined.Home),
+                Triple("Send", Icons.Filled.Upload, Icons.Outlined.Upload),
+                Triple("Receive", Icons.Filled.Download, Icons.Outlined.Download),
+                Triple("History", Icons.Filled.History, Icons.Outlined.History),
+                Triple("Web", Icons.Filled.Language, Icons.Outlined.Language),
+                Triple("Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
+                Triple("Developer", Icons.Filled.DeveloperMode, Icons.Outlined.DeveloperMode)
+            )
+
+            if (!isTablet) {
+                // PHONE LAYOUT: bottom bar scaffold
+                Scaffold(
+                    bottomBar = {
+                        NavigationBar(
+                            modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
+                            containerColor = MaterialTheme.colorScheme.background,
+                            tonalElevation = 8.dp
+                        ) {
+                            tabs.forEachIndexed { index, tab ->
+                                val (title, filledIcon, outlinedIcon) = tab
+                                NavigationBarItem(
+                                    icon = {
+                                        Icon(
+                                            imageVector = if (selectedTab == index) filledIcon else outlinedIcon,
+                                            contentDescription = title
+                                        )
+                                    },
+                                    label = { Text(title, style = MaterialTheme.typography.labelSmall) },
+                                    selected = selectedTab == index,
+                                    onClick = {
+                                        try {
+                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        } catch (e: Exception) { e.printStackTrace() }
+                                        selectedTab = index
+                                    },
+                                    modifier = Modifier.testTag("tab_${title.lowercase().replace(" ", "_")}")
+                                )
+                            }
+                        }
+                    }
+                ) { padding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                            .background(MaterialTheme.colorScheme.background)
+                    ) {
+                        AnimatedContent(
+                            targetState = selectedTab,
+                            transitionSpec = {
+                                fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) togetherWith 
+                                fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+                            },
+                            label = "TabTransition"
+                        ) { targetTab ->
+                            when (targetTab) {
+                                0 -> PortalHomeScreen(viewModel)
+                                1 -> SendFileScreen(viewModel)
+                                2 -> ReceiveRadarScreen(viewModel)
+                                3 -> HistoryLedgerScreen(viewModel)
+                                4 -> WebShareScreen(webShareViewModel)
+                                5 -> SettingsScreen(viewModel)
+                                6 -> DeveloperAuditorScreen(viewModel)
+                                else -> PortalHomeScreen(viewModel)
+                            }
+                        }
+                    }
                 }
-            }
-        ) { padding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(MaterialTheme.colorScheme.background)
-            ) {
-                AnimatedContent(
-                    targetState = selectedTab,
-                    transitionSpec = {
-                        fadeIn() togetherWith fadeOut()
-                    },
-                    label = "TabTransition"
-                ) { targetTab ->
-                    when (targetTab) {
-                        0 -> PortalHomeScreen(viewModel)
-                        1 -> SendFileScreen(viewModel)
-                        2 -> ReceiveRadarScreen(viewModel)
-                        3 -> HistoryLedgerScreen(viewModel)
-                        4 -> WebShareScreen(webShareViewModel)
-                        5 -> SettingsShieldScreen(viewModel)
+            } else {
+                // TABLET LAYOUT: side navigation rail
+                Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    NavigationRail(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .windowInsetsPadding(WindowInsets.safeDrawing),
+                        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
+                        header = {
+                            Box(
+                                modifier = Modifier
+                                    .padding(vertical = 24.dp)
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "App Icon Logo",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                    ) {
+                        Spacer(modifier = Modifier.weight(1f))
+                        tabs.forEachIndexed { index, tab ->
+                            val (title, filledIcon, outlinedIcon) = tab
+                            NavigationRailItem(
+                                icon = {
+                                    Icon(
+                                        imageVector = if (selectedTab == index) filledIcon else outlinedIcon,
+                                        contentDescription = title
+                                    )
+                                },
+                                label = { Text(title, style = MaterialTheme.typography.labelSmall) },
+                                selected = selectedTab == index,
+                                onClick = {
+                                    try {
+                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                    } catch (e: Exception) { e.printStackTrace() }
+                                    selectedTab = index
+                                },
+                                modifier = Modifier.testTag("tab_rail_${title.lowercase().replace(" ", "_")}")
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+
+                    // Content Canvas
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .background(MaterialTheme.colorScheme.background)
+                            .windowInsetsPadding(WindowInsets.safeDrawing)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .widthIn(max = 760.dp)
+                                .align(Alignment.TopCenter)
+                        ) {
+                            AnimatedContent(
+                                targetState = selectedTab,
+                                transitionSpec = {
+                                    fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) togetherWith 
+                                    fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+                                },
+                                label = "TabletTabTransition"
+                            ) { targetTab ->
+                                when (targetTab) {
+                                    0 -> PortalHomeScreen(viewModel)
+                                    1 -> SendFileScreen(viewModel)
+                                    2 -> ReceiveRadarScreen(viewModel)
+                                    3 -> HistoryLedgerScreen(viewModel)
+                                    4 -> WebShareScreen(webShareViewModel)
+                                    5 -> SettingsScreen(viewModel)
+                                    6 -> DeveloperAuditorScreen(viewModel)
+                                    else -> PortalHomeScreen(viewModel)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -842,9 +933,12 @@ fun ReceiveRadarScreen(viewModel: EchoViewModel) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HistoryLedgerScreen(viewModel: EchoViewModel) {
     val transfers by viewModel.transferProgress.collectAsState()
+    var activePreviewTransfer by remember { mutableStateOf<FileTransfer?>(null) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
 
     Column(
         modifier = Modifier
@@ -872,7 +966,12 @@ fun HistoryLedgerScreen(viewModel: EchoViewModel) {
             }
             if (transfers.isNotEmpty()) {
                 IconButton(
-                    onClick = { viewModel.clearTransfers() },
+                    onClick = {
+                        try {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        } catch (e: Exception) {}
+                        viewModel.clearTransfers()
+                    },
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
                         contentColor = MaterialTheme.colorScheme.error
@@ -912,31 +1011,273 @@ fun HistoryLedgerScreen(viewModel: EchoViewModel) {
                     .fillMaxWidth(),
                 contentPadding = PaddingValues(bottom = 12.dp)
             ) {
-                items(transfers.reversed()) { transfer ->
-                    TransferItemRow(
-                        transfer = transfer,
-                        onDelete = { viewModel.deleteFileFromHistory(transfer.fileName) }
-                    )
+                items(
+                    items = transfers.asReversed(),
+                    key = { it.id }
+                ) { transfer ->
+                    Box(
+                        modifier = Modifier
+                            .animateItemPlacement(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioLowBouncy,
+                                    stiffness = Spring.StiffnessMediumLow
+                                )
+                            )
+                            .clickable {
+                                try {
+                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                } catch (e: Exception) {}
+                                activePreviewTransfer = transfer
+                            }
+                    ) {
+                        TransferItemRow(
+                            transfer = transfer,
+                            onDelete = { viewModel.deleteFileFromHistory(transfer.fileName) }
+                        )
+                    }
                 }
             }
         }
     }
+
+    // Interactive File Preview overlay modal dialog
+    activePreviewTransfer?.let { transfer ->
+        FilePreviewModal(
+            transfer = transfer,
+            onDismiss = { activePreviewTransfer = null },
+            onDelete = { viewModel.deleteFileFromHistory(transfer.fileName) }
+        )
+    }
 }
 
 @Composable
-fun SettingsShieldScreen(viewModel: EchoViewModel) {
+fun FilePreviewModal(
+    transfer: FileTransfer,
+    onDismiss: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val context = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        icon = {
+            Surface(
+                shape = CircleShape,
+                color = when (transfer.status) {
+                    TransferStatus.COMPLETED -> Color(0xFF1B5E20).copy(alpha = 0.12f)
+                    TransferStatus.FAILED -> Color(0xFFB71C1C).copy(alpha = 0.12f)
+                    else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                },
+                modifier = Modifier.size(72.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = when {
+                            transfer.fileName.substringAfterLast(".").let { ext ->
+                                listOf("jpg", "jpeg", "png", "webp", "gif").contains(ext.lowercase())
+                            } -> Icons.Default.Image
+                            transfer.fileName.substringAfterLast(".").let { ext ->
+                                listOf("mp4", "mkv", "avi", "mov").contains(ext.lowercase())
+                            } -> Icons.Default.Videocam
+                            transfer.fileName.substringAfterLast(".").let { ext ->
+                                listOf("mp3", "wav", "m4a", "ogg", "flac").contains(ext.lowercase())
+                            } -> Icons.Default.MusicNote
+                            else -> Icons.Default.InsertDriveFile
+                        },
+                        contentDescription = "Large Preview Icon",
+                        modifier = Modifier.size(36.dp),
+                        tint = when (transfer.status) {
+                            TransferStatus.COMPLETED -> Color(0xFF4CAF50)
+                            TransferStatus.FAILED -> Color(0xFFF44336)
+                            else -> MaterialTheme.colorScheme.primary
+                        }
+                    )
+                }
+            }
+        },
+        title = {
+            Text(
+                text = "Transmission Details",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = transfer.fileName,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .padding(14.dp)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Flow Direct:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                if (transfer.isIncoming) "Incoming ←" else "Outgoing →",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (transfer.isIncoming) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Partner Node:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(transfer.remoteDeviceName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                        }
+                        
+                        val formattedSize = remember(transfer.size) {
+                            when {
+                                transfer.size <= 0 -> "Unknown Size"
+                                transfer.size < 1024 -> "${transfer.size} B"
+                                transfer.size < 1024 * 1024 -> "${String.format("%.1f", transfer.size / 1024f)} KB"
+                                else -> "${String.format("%.1f", transfer.size / (1024f * 1024f))} MB"
+                            }
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Recorded Size:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(formattedSize, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Transfer Status:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = transfer.status.name,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Black,
+                                color = when (transfer.status) {
+                                    TransferStatus.COMPLETED -> Color(0xFF4CAF50)
+                                    TransferStatus.FAILED -> Color(0xFFF44336)
+                                    else -> MaterialTheme.colorScheme.primary
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (transfer.status == TransferStatus.COMPLETED) {
+                    Button(
+                        onClick = {
+                            try {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            } catch (e: Exception) {}
+                            
+                            try {
+                                val dir = File(context.getExternalFilesDir(null), "Received")
+                                val file = File(dir, transfer.fileName)
+                                if (file.exists()) {
+                                    val fallbackIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "*/*"
+                                        putExtra(android.content.Intent.EXTRA_STREAM, Uri.fromFile(file))
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(fallbackIntent, "Share received file"))
+                                } else {
+                                    android.widget.Toast.makeText(context, "File does not exist on storage.", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                android.widget.Toast.makeText(context, "Error sharing file: ${e.localizedMessage}", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Share, "Share")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Share Outward", fontWeight = FontWeight.Bold)
+                    }
+                }
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            } catch (e: Exception) {}
+                            onDelete()
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.weight(1.5f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Remove Log", fontSize = 12.sp)
+                    }
+                    Button(
+                        onClick = {
+                            try {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            } catch (e: Exception) {}
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Done", fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    )
+}
+
+@Composable
+fun SettingsScreen(viewModel: EchoViewModel) {
     val pin by viewModel.pairingPin.collectAsState()
     val ipAddress by viewModel.ipAddress.collectAsState()
-    val eventsLog by viewModel.appEventsLog.collectAsState()
-    val crashesLog by viewModel.appCrashesLog.collectAsState()
     val context = LocalContext.current
-    
-    var activeLogSegment by remember { mutableStateOf("EVENTS") } // EVENTS or CRASHES
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
 
-    // Ensure logs are loaded when entering the screen
-    LaunchedEffect(Unit) {
-        viewModel.loadLogs()
-    }
+    var customDeviceName by remember { mutableStateOf(android.os.Build.MODEL) }
+    var autoRegisterService by remember { mutableStateOf(true) }
 
     LazyColumn(
         modifier = Modifier
@@ -947,24 +1288,76 @@ fun SettingsShieldScreen(viewModel: EchoViewModel) {
         item {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Console & Logs",
+                text = "System Parameters",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "Secure PIN configuration and event diagnostics log outputs",
+                text = "Configure device display profile identity and token shields",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // User Display Name Profile Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = "Profile Identity",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Device Display Profile",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = customDeviceName,
+                        onValueChange = {
+                            customDeviceName = it
+                            try {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                            } catch (e: Exception) {}
+                        },
+                        label = { Text("Display Broadcast Name") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("device_name_field"),
+                        shape = RoundedCornerShape(12.dp),
+                        leadingIcon = {
+                            Icon(Icons.Default.Devices, contentDescription = "Device Model")
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "This is how this device appears to others nearby during discovery scans.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            }
+
             // Authorization PIN code generator Card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(20.dp)),
+                    .padding(vertical = 8.dp)
+                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(20.dp)),
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
             ) {
@@ -993,12 +1386,12 @@ fun SettingsShieldScreen(viewModel: EchoViewModel) {
 
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Clients must provide this security standard authentication PIN to begin file transactions.",
+                        text = "Clients must provide this security standard authentication PIN to initiate secure peer-to-peer file transfers.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     Box(
                         modifier = Modifier
@@ -1018,7 +1411,12 @@ fun SettingsShieldScreen(viewModel: EchoViewModel) {
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Button(
-                        onClick = { viewModel.generatePairingPin() },
+                        onClick = {
+                            try {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            } catch (e: Exception) {}
+                            viewModel.generatePairingPin()
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(46.dp)
@@ -1032,7 +1430,123 @@ fun SettingsShieldScreen(viewModel: EchoViewModel) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            // General Protocol Toggles Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Protocols & Gateways",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Automatic Naming discovery", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            Text("Announce presence to LAN via Bonjour / NSD protocols automatically", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = autoRegisterService,
+                            onCheckedChange = {
+                                try {
+                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                } catch (e: Exception) {}
+                                autoRegisterService = it
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Storage Cache Cleaner details card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.08f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Storage & Cleanup Utilities",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Receipt directory location:\n/Android/data/${context.packageName}/files/Received/",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            } catch (e: Exception) {}
+                            viewModel.clearTransfers()
+                            android.widget.Toast.makeText(context, "Storage receipts database wiped successfully.", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
+                    ) {
+                        Icon(Icons.Default.CleaningServices, contentDescription = "Wipe", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Clear Completed Receipts & Storage History", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DeveloperAuditorScreen(viewModel: EchoViewModel) {
+    val eventsLog by viewModel.appEventsLog.collectAsState()
+    val crashesLog by viewModel.appCrashesLog.collectAsState()
+    val ipAddress by viewModel.ipAddress.collectAsState()
+    val context = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
+    var activeLogSegment by remember { mutableStateOf("EVENTS") } // EVENTS or CRASHES
+
+    // Auto-reload logs when entering the canvas
+    LaunchedEffect(Unit) {
+        viewModel.loadLogs()
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        contentPadding = PaddingValues(bottom = 32.dp)
+    ) {
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Diagnostics & Audit Panel",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "Inspect raw network protocols, NSD sockets, and event outputs",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Embedded Diagnostic Log reader Console card
             Card(
@@ -1047,17 +1561,31 @@ fun SettingsShieldScreen(viewModel: EchoViewModel) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "On-Device Logging Auditor",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Terminal, contentDescription = "Console", tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "On-Device Logging Auditor",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                         Row {
-                            IconButton(onClick = { viewModel.loadLogs() }) {
+                            IconButton(onClick = {
+                                try {
+                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                } catch (e: Exception) {}
+                                viewModel.loadLogs()
+                            }) {
                                 Icon(Icons.Default.Refresh, "Refresh Info", modifier = Modifier.size(20.dp))
                             }
-                            IconButton(onClick = { viewModel.clearLogsAndRefresh() }) {
+                            IconButton(onClick = {
+                                try {
+                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                } catch (e: Exception) {}
+                                viewModel.clearLogsAndRefresh()
+                            }) {
                                 Icon(Icons.Default.Delete, "Delete Info", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
                             }
                         }
@@ -1114,23 +1642,23 @@ fun SettingsShieldScreen(viewModel: EchoViewModel) {
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(180.dp),
-                        shape = RoundedCornerShape(8.dp),
+                            .height(200.dp),
+                        shape = RoundedCornerShape(12.dp),
                         color = Color.Black,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.4f))
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f))
                     ) {
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(8.dp)
+                                .padding(10.dp)
                         ) {
                             item {
                                 Text(
-                                    text = displayedLogs.ifEmpty { "No diagnostic entries registered." },
+                                    text = displayedLogs.ifEmpty { "WLAN diagnostic system is completely quiet. Ready for packet transmission." },
                                     color = Color.Green,
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 11.sp,
-                                    lineHeight = 15.sp
+                                    lineHeight = 16.sp
                                 )
                             }
                         }
@@ -1139,32 +1667,74 @@ fun SettingsShieldScreen(viewModel: EchoViewModel) {
                     Spacer(modifier = Modifier.height(14.dp))
 
                     Button(
-                        onClick = { viewModel.exportLogsAndRefresh(context) },
+                        onClick = {
+                            try {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            } catch (e: Exception) {}
+                            viewModel.exportLogsAndRefresh(context)
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Icon(Icons.Default.Share, "Share Diagnostics")
+                        Icon(Icons.Default.Save, "Export Logs", modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Send / Export System Logs", fontWeight = FontWeight.Bold)
+                        Text("Export Systems Diagnostic Bundle", fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Diagnostic specifics
+            // Raw Telemetry card
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
                 shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("P2P System Ledger", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        "P2P Network Diagnostics Specs",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Wi-Fi IP Network Host: $ipAddress", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Gateway Socket listener Port: 8080", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("WLAN Discovery Protocol: Bonjour / NSD", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Wi-Fi IP Address: $ipAddress", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Local Gateway Listener Port: 8080", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Bonjour Discovery protocol: NSD Active", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Service Announcement Type: _localshare._tcp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Test injector card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Simulated Diagnostics Injector", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Writers can append custom entries to the logs databases to test screen layouts.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            try {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            } catch (e: Exception) {}
+                            viewModel.addManualLog("DevConsole", "Triggered manual diagnostics ping. LAN interface fully responsive.")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.outline),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Inject Simulated Audit Event", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

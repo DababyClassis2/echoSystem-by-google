@@ -197,8 +197,16 @@ fun DeviceCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     Card(
-        onClick = onClick,
+        onClick = {
+            try {
+                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            onClick()
+        },
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
@@ -437,13 +445,21 @@ fun TransferItemRow(
 
             // Progress Slider and Status Info for active/failed operations
             if (transfer.status == TransferStatus.ONGOING) {
+                val animatedProgress by animateFloatAsState(
+                    targetValue = transfer.progress,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessLow
+                    ),
+                    label = "SmoothProgress"
+                )
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     LinearProgressIndicator(
-                        progress = { transfer.progress },
+                        progress = { animatedProgress },
                         modifier = Modifier
                             .weight(1f)
                             .height(6.dp)
@@ -454,7 +470,7 @@ fun TransferItemRow(
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "${(transfer.progress * 100).toInt()}%",
+                        text = "${(animatedProgress * 100).toInt()}%",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
