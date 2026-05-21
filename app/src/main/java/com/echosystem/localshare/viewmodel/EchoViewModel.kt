@@ -29,6 +29,7 @@ import java.io.InputStream
 import javax.inject.Inject
 
 import com.echosystem.localshare.security.TrustManager
+import com.echosystem.localshare.core.CoreSystemSupervisor
 
 @HiltViewModel
 class EchoViewModel @Inject constructor(
@@ -39,7 +40,8 @@ class EchoViewModel @Inject constructor(
     val trustManager: TrustManager,
     private val nsdHelper: NsdHelper,
     private val httpClient: HttpClient,
-    private val serverEventBus: ServerEventBus
+    private val serverEventBus: ServerEventBus,
+    val coreSystemSupervisor: CoreSystemSupervisor
 ) : ViewModel() {
 
     val devices: StateFlow<List<Device>> = deviceRegistry.deviceList
@@ -178,25 +180,31 @@ class EchoViewModel @Inject constructor(
             )
             
             _transferProgress.update { it + transfer }
-            AppLogger.logEvent("EchoViewModel", "Starting outgoing transfer of $fileName ($fileSize bytes) to ${device.name}")
+            
+            val adaptiveBlockSize = coreSystemSupervisor.getAdaptiveBlockSize()
+            AppLogger.logEvent("EchoViewModel", "Starting outgoing transfer of $fileName ($fileSize bytes) to ${device.name} - Adaptive buffer chunk allocation size: ${adaptiveBlockSize / 1024} KB")
 
             try {
                 val inputStream = fileRepository.openInputStream(uri) ?: return@launch
-                val response: HttpResponse = httpClient.post("http://${device.ip}:${device.port}/transfer/upload") {
-                    setBody(MultiPartFormDataContent(
-                        formData {
-                            append("file", inputStream.readBytes(), Headers.build {
-                                append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
-                            })
+                
+                // execute within auto-retry and stability failover logic
+                val response: HttpResponse = coreSystemSupervisor.runWithAutoRetry(device) { resolvedIp ->
+                    httpClient.post("http://$resolvedIp:${device.port}/transfer/upload") {
+                        setBody(MultiPartFormDataContent(
+                            formData {
+                                append("file", inputStream.readBytes(), Headers.build {
+                                    append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
+                                })
+                            }
+                        ))
+                        onUpload { bytesSentTotal, contentLength ->
+                            val progressValue = if (contentLength != null && contentLength > 0L) {
+                                bytesSentTotal.toFloat() / contentLength
+                            } else {
+                                0f
+                            }
+                            updateTransferProgress(transfer.id, progressValue)
                         }
-                    ))
-                    onUpload { bytesSentTotal, contentLength ->
-                        val progressValue = if (contentLength != null && contentLength > 0L) {
-                            bytesSentTotal.toFloat() / contentLength
-                        } else {
-                            0f
-                        }
-                        updateTransferProgress(transfer.id, progressValue)
                     }
                 }
 

@@ -13,13 +13,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.echosystem.localshare.core.CoreSystemSupervisor
 import com.echosystem.localshare.service.FileTransferService
 import com.echosystem.localshare.ui.screens.MainScreen
 import com.echosystem.localshare.ui.theme.EchoSystemTheme
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var coreSystemSupervisor: CoreSystemSupervisor
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,6 +36,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        coreSystemSupervisor.setAppForegroundStatus(true)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        coreSystemSupervisor.setAppForegroundStatus(false)
     }
 
     override fun onStart() {
