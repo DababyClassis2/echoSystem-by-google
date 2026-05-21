@@ -1,27 +1,8 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Concentric radar signal waves -->
-    <path
-        android:pathData="M54,54m-22,0a22,22 0,1 1,44 0a22,22 0,1 1,-44 0"
-        android:strokeWidth="3"
-        android:strokeColor="#00E5B8"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000" />
-    <path
-        android:pathData="M54,54m-36,0a36,36 0,1 1,72 0a36,36 0,1 1,-72 0"
-        android:strokeWidth="2"
-        android:strokeColor="#7C9AFF"
-        android:strokeLineCap="round"
-        android:strokeAlpha="0.6"
-        android:fillColor="#00000000" />
-    <!-- Sleek file transfer central glyph -->
-    <path
-        android:pathData="M44,38H58V48L64,48L54,58L44,48H50V38Z"
-        android:fillColor="#00E5B8" />
-    <path
-        android:pathData="M64,70H50V60L44,60L54,50L64,60H58V70Z"
-        android:fillColor="#7C9AFF" />
-</vector>
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="72dp"
+        android:height="72dp"
+        android:drawable="@drawable/ic_echo_pulse_inner_1779346314071"
+        android:gravity="center" />
+</layer-list>

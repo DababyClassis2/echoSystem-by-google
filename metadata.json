@@ -1,6 +1,6 @@
 {
-  "name": "EchoSystem",
-  "description": "Peer-to-peer secure local file sharing for Android devices on the same network.",
+  "name": "EchoSystem LocalShare",
+  "description": "Full-Stack Native Android Local File Sharing System with zero internet required.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
