@@ -37,6 +37,23 @@ class FileRoutes @Inject constructor(
                 call.respond(HttpStatusCode.NotFound)
             }
         }
+
+        post("/api/v1/files/upload") {
+            // Very simple upload for now - just reading entire body
+            // In a real app we'd use MultiPartData
+            val fileName = call.request.headers["File-Name"] ?: "received_${System.currentTimeMillis()}"
+            val inputStream = call.receiveStream()
+            fileRepository.saveFile(fileName, inputStream)
+            call.respond(HttpStatusCode.OK)
+        }
+
+        // Keep the user's specifically requested route too for compatibility
+        post("/transfer/upload") {
+            val fileName = call.parameters["name"] ?: call.request.headers["File-Name"] ?: "received_${System.currentTimeMillis()}"
+            val inputStream = call.receiveStream()
+            fileRepository.saveFile(fileName, inputStream)
+            call.respond(HttpStatusCode.OK)
+        }
         
         // Step 4: Chunked upload placeholder
         put("/api/v1/files/upload-chunk") {
