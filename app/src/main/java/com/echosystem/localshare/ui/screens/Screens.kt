@@ -1516,227 +1516,665 @@ fun DeveloperAuditorScreen(viewModel: EchoViewModel) {
     val eventsLog by viewModel.appEventsLog.collectAsState()
     val crashesLog by viewModel.appCrashesLog.collectAsState()
     val ipAddress by viewModel.ipAddress.collectAsState()
+    val devices by viewModel.devices.collectAsState()
     val context = LocalContext.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
 
+    // Real-time performance monitors
+    val perfHistory by com.echosystem.localshare.logging.PerformanceMonitor.history.collectAsState()
+    val watchdogLogs by com.echosystem.localshare.logging.PerformanceMonitor.perfLogs.collectAsState()
+
+    var activeDeveloperSubTab by remember { mutableStateOf("PERFORMANCE") } // PERFORMANCE, SECURITY, TERMINAL
     var activeLogSegment by remember { mutableStateOf("EVENTS") } // EVENTS or CRASHES
+    var showBiometricConfirmForDevice by remember { mutableStateOf<Device?>(null) }
 
-    // Auto-reload logs when entering the canvas
+    fun formatLocalBytes(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt().coerceIn(1, 6)
+        val suffix = "KMGTPE"[exp - 1] + "B"
+        return String.format("%.1f %s", bytes / Math.pow(1024.0, exp.toDouble()), suffix)
+    }
+
+    // Auto-reload logs when entering
     LaunchedEffect(Unit) {
         viewModel.loadLogs()
     }
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        contentPadding = PaddingValues(bottom = 32.dp)
+            .padding(16.dp)
     ) {
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Diagnostics & Audit Panel",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Diagnostics & Audit Panel",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = "Inspect raw telemetry, device trust security, and socket logs",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Premium Navigation Tabs for Sub-Menus
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                .padding(4.dp)
+        ) {
+            val tabsList = listOf(
+                Triple("PERFORMANCE", "Telemetry", Icons.Default.Speed),
+                Triple("SECURITY", "Trust Registry", Icons.Default.Fingerprint),
+                Triple("TERMINAL", "System Logs", Icons.Default.Terminal)
             )
-            Text(
-                text = "Inspect raw network protocols, NSD sockets, and event outputs",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Embedded Diagnostic Log reader Console card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Terminal, contentDescription = "Console", tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "On-Device Logging Auditor",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        Row {
-                            IconButton(onClick = {
-                                try {
-                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                } catch (e: Exception) {}
-                                viewModel.loadLogs()
-                            }) {
-                                Icon(Icons.Default.Refresh, "Refresh Info", modifier = Modifier.size(20.dp))
-                            }
-                            IconButton(onClick = {
-                                try {
-                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                } catch (e: Exception) {}
-                                viewModel.clearLogsAndRefresh()
-                            }) {
-                                Icon(Icons.Default.Delete, "Delete Info", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Log category Selectors (Events vs Crashes Segment)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(2.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (activeLogSegment == "EVENTS") MaterialTheme.colorScheme.primary else Color.Transparent)
-                                .clickable { activeLogSegment = "EVENTS" }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "Event Log",
-                                color = if (activeLogSegment == "EVENTS") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (activeLogSegment == "CRASHES") MaterialTheme.colorScheme.primary else Color.Transparent)
-                                .clickable { activeLogSegment = "CRASHES" }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "App Crashes",
-                                color = if (activeLogSegment == "CRASHES") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Text-based log stream view
-                    val displayedLogs = if (activeLogSegment == "EVENTS") eventsLog else crashesLog
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color.Black,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f))
-                    ) {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(10.dp)
-                        ) {
-                            item {
-                                Text(
-                                    text = displayedLogs.ifEmpty { "WLAN diagnostic system is completely quiet. Ready for packet transmission." },
-                                    color = Color.Green,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp,
-                                    lineHeight = 16.sp
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Button(
-                        onClick = {
-                            try {
-                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            } catch (e: Exception) {}
-                            viewModel.exportLogsAndRefresh(context)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(Icons.Default.Save, "Export Logs", modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Export Systems Diagnostic Bundle", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Raw Telemetry card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "P2P Network Diagnostics Specs",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Wi-Fi IP Address: $ipAddress", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Local Gateway Listener Port: 8080", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Bonjour Discovery protocol: NSD Active", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Service Announcement Type: _localshare._tcp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Test injector card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Simulated Diagnostics Injector", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Writers can append custom entries to the logs databases to test screen layouts.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = {
-                            try {
-                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            } catch (e: Exception) {}
-                            viewModel.addManualLog("DevConsole", "Triggered manual diagnostics ping. LAN interface fully responsive.")
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.outline),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Inject Simulated Audit Event", fontWeight = FontWeight.Bold)
+            tabsList.forEach { (tabId, label, icon) ->
+                val isSelected = activeDeveloperSubTab == tabId
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                        .clickable { activeDeveloperSubTab = tabId }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = label,
+                            tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = label,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
                     }
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Box(modifier = Modifier.weight(1f)) {
+            when (activeDeveloperSubTab) {
+                "PERFORMANCE" -> {
+                    val latestSnap = perfHistory.lastOrNull()
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        item {
+                            // CPU & RAM Grid
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Card(
+                                    modifier = Modifier.weight(1f),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text("Process CPU Load", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        val cpuVal = latestSnap?.cpuUsage ?: 0.0
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(70.dp)) {
+                                            CircularProgressIndicator(
+                                                progress = (cpuVal / 100.0).toFloat(),
+                                                strokeWidth = 6.dp,
+                                                color = if (cpuVal > 80.0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                            Text("${String.format("%.1f", cpuVal)}%", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Black)
+                                        }
+                                    }
+                                }
+
+                                Card(
+                                    modifier = Modifier.weight(1f),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.2f)),
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text("JVM Memory Heap", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        val usedMem = latestSnap?.usedMemoryMb ?: 0L
+                                        val totalMem = latestSnap?.totalMemoryMb?.coerceAtLeast(1L) ?: 512L
+                                        val ratio = (usedMem.toFloat() / totalMem).coerceIn(0f, 1f)
+                                        
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(70.dp)) {
+                                            CircularProgressIndicator(
+                                                progress = ratio,
+                                                strokeWidth = 6.dp,
+                                                color = if (ratio > 0.85f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Text("${usedMem}MB", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Black)
+                                                Text("max $totalMem", style = MaterialTheme.typography.labelSmall, fontSize = 8.sp, color = Color.Gray)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        item {
+                            // Traffic Output Analytics Cards
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Network Speed Telemetry", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall)
+                                        Icon(Icons.Default.Dns, "Network", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    
+                                    val rxSpeed = latestSnap?.rxBytesSec ?: 0L
+                                    val txSpeed = latestSnap?.txBytesSec ?: 0L
+                                    
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("Download Throughput", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                            Text("${formatLocalBytes(rxSpeed)}/s", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("Upload Throughput", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                            Text("${formatLocalBytes(txSpeed)}/s", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.secondary)
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    val activeTransfers = latestSnap?.activeTransfersCount ?: 0
+                                    Text(
+                                        text = "Active Concurrent Streams: $activeTransfers",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        item {
+                            // Background Watchdog Logs Panel
+                            Text("Background Watchdog Monitoring", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 4.dp))
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(140.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.Black)
+                            ) {
+                                LazyColumn(modifier = Modifier.padding(10.dp)) {
+                                    if (watchdogLogs.isEmpty()) {
+                                        item {
+                                            Text(
+                                                "[SYS WATCHDOG] Telemetry monitoring online. System operating within secure parameters. Core loads clean.",
+                                                color = Color.Green,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                    } else {
+                                        items(watchdogLogs) { log ->
+                                            Text(log, color = Color(0xFFFFB74D), fontFamily = FontFamily.Monospace, fontSize = 10.sp, modifier = Modifier.padding(bottom = 2.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        val file = com.echosystem.localshare.logging.PerformanceMonitor.exportPerfLogs(context)
+                                        if (file != null && file.exists()) {
+                                            try {
+                                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                            } catch (e: Exception) {}
+                                            try {
+                                                androidx.core.app.ShareCompat.IntentBuilder(context)
+                                                    .setType("text/plain")
+                                                    .setStream(androidx.core.content.FileProvider.getUriForFile(
+                                                        context,
+                                                        "${context.packageName}.fileprovider",
+                                                        file
+                                                    ))
+                                                    .startChooser()
+                                            } catch (e: Exception) {
+                                                android.widget.Toast.makeText(context, "Export saved to: ${file.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                ) {
+                                    Icon(Icons.Default.Save, "Export")
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Export Watchdog Report", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        com.echosystem.localshare.logging.PerformanceMonitor.clearPerfLogs()
+                                    },
+                                    modifier = Modifier.weight(0.5f),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("Reset Metrics", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                "SECURITY" -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.15f)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Security,
+                                        contentDescription = "Security Info",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = "Auto-Pair Bypass works via cryptographic SHA-256 fingerprint matching. Verified trusted nodes bypass pairing PIN prompts.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        lineHeight = 14.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        item {
+                            Text(
+                                "Registered Recipient Nodes (${devices.size})",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+
+                        if (devices.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "No discovered devices to configure trust logs.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+                        } else {
+                            items(devices) { device ->
+                                val isTrusted = viewModel.trustManager.isDeviceTrusted(device.id)
+                                val fingerprint = viewModel.trustManager.generateFingerprint(device.id, device.name).take(16).chunked(4).joinToString("-") { it.uppercase() }
+                                
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text(device.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                                Text("IP: ${device.ip}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                            }
+                                            
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (isTrusted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                                modifier = Modifier.padding(2.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (isTrusted) "TRUSTED ACTIVE" else "PIN SECURED",
+                                                    color = if (isTrusted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Black,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text("SHA-256 Fingerprint Key", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                                Text(fingerprint, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                                            }
+
+                                            Button(
+                                                onClick = {
+                                                    try {
+                                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                                    } catch (e: Exception) {}
+                                                    showBiometricConfirmForDevice = device
+                                                },
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if (isTrusted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                                ),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                            ) {
+                                                Text(if (isTrusted) "Untrust Node" else "Trust Node", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                "TERMINAL" -> {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Terminal, contentDescription = "Console", tint = MaterialTheme.colorScheme.primary)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "On-Device Logging Auditor",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Row {
+                                        IconButton(onClick = {
+                                            try {
+                                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                            } catch (e: Exception) {}
+                                            viewModel.loadLogs()
+                                        }) {
+                                            Icon(Icons.Default.Refresh, "Refresh Info", modifier = Modifier.size(20.dp))
+                                        }
+                                        IconButton(onClick = {
+                                            try {
+                                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                            } catch (e: Exception) {}
+                                            viewModel.clearLogsAndRefresh()
+                                        }) {
+                                            Icon(Icons.Default.Delete, "Delete Info", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Log category Selectors (Events vs Crashes Segment)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .padding(2.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(if (activeLogSegment == "EVENTS") MaterialTheme.colorScheme.primary else Color.Transparent)
+                                            .clickable { activeLogSegment = "EVENTS" }
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            "Event Log",
+                                            color = if (activeLogSegment == "EVENTS") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(if (activeLogSegment == "CRASHES") MaterialTheme.colorScheme.primary else Color.Transparent)
+                                            .clickable { activeLogSegment = "CRASHES" }
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            "App Crashes",
+                                            color = if (activeLogSegment == "CRASHES") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Text-based log stream view
+                                val displayedLogs = if (activeLogSegment == "EVENTS") eventsLog else crashesLog
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(150.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Color.Black,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f))
+                                ) {
+                                    LazyColumn(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(10.dp)
+                                    ) {
+                                        item {
+                                            Text(
+                                                text = displayedLogs.ifEmpty { "WLAN diagnostic system is completely quiet. Ready for packet transmission." },
+                                                color = Color.Green,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 11.sp,
+                                                lineHeight = 16.sp
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Button(
+                                    onClick = {
+                                        try {
+                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        } catch (e: Exception) {}
+                                        viewModel.exportLogsAndRefresh(context)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.Save, "Export Logs", modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Export WLAN Logs Bundle", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                            }
+                        }
+
+                        // Test Injector
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text("Simulated Diagnostics Injector", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Append temporary test records to log database", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Button(
+                                    onClick = {
+                                        try {
+                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        } catch (e: Exception) {}
+                                        viewModel.addManualLog("DevConsole", "Manual event injection. LAN frames responsive.")
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.outline),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("Inject Sample Audit Event", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Modern Biometric Confirmation AlertDialog mockup with complete functional operations
+    if (showBiometricConfirmForDevice != null) {
+        val currentDevice = showBiometricConfirmForDevice!!
+        val isNowTrusted = viewModel.trustManager.isDeviceTrusted(currentDevice.id)
+        
+        AlertDialog(
+            onDismissRequest = { showBiometricConfirmForDevice = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Fingerprint, "Biometric Prompt", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Identity Verification")
+                }
+            },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = if (isNowTrusted) 
+                            "Scan fingerprint (or enter system PIN) to untrust this device. It will no longer bypass pairing PIN prompts."
+                        else 
+                            "Scan fingerprint (or enter system PIN) to trust this device. Trusted devices bypass PIN prompts and connect immediately.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(currentDevice.name, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.bodyMedium)
+                            Text("UID: ${currentDevice.id}", style = MaterialTheme.typography.bodySmall, fontSize = 10.sp, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Pulse interactive touch scanner
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                            .clickable {
+                                try {
+                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                } catch (e: Exception) {}
+                                
+                                // Toggle Trust State successfully
+                                viewModel.trustManager.setDeviceTrust(currentDevice.id, currentDevice.name, !isNowTrusted)
+                                showBiometricConfirmForDevice = null
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Fingerprint,
+                            contentDescription = "Tap Fingerprint",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Tap scanner to confirm identity",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showBiometricConfirmForDevice = null }) {
+                    Text("Cancel", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 }

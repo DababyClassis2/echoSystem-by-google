@@ -802,7 +802,9 @@
         }
 
         // Upload stream workflow & tracker
-        function uploadFiles(files) {
+        const cancelledUploads = new Set();
+
+        async function uploadFiles(files) {
             if (files.length === 0) return;
 
             // Maximize queue panel initially to display upload progress
@@ -812,11 +814,16 @@
             document.getElementById('queueEmpty').classList.add('hidden');
             lucide.createIcons();
 
-            files.forEach(file => {
+            for (const file of files) {
+                // Ensure filename is removed from cancelled registry
+                cancelledUploads.delete(file.name);
+
                 const queueId = 'up-' + Math.random().toString(36).substring(2, 8);
-                
+                // Stabilized fileId for resuming
+                const fileId = encodeURIComponent(file.name + '-' + file.size + '-' + file.lastModified);
+
                 // Active records tracker
-                activeUploads[file.name] = { id: queueId, size: file.size };
+                activeUploads[file.name] = { id: queueId, size: file.size, isPaused: false };
 
                 // Append card row in transmission manager
                 const queueListBody = document.getElementById('queueListBody');
@@ -829,9 +836,14 @@
                             <i data-lucide="file-up" class="w-4 h-4 text-indigo-400 shrink-0"></i>
                             <span class="text-xs font-bold text-slate-200 truncate pr-2" title="${file.name}">${file.name}</span>
                         </div>
-                        <button onclick="cancelActiveUpload('${file.name}')" class="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-red-400 shrink-0 select-none">
-                            <i data-lucide="x" class="w-3.5 h-3.5"></i>
-                        </button>
+                        <div class="flex items-center space-x-2 shrink-0">
+                            <button id="btn-pause-${queueId}" onclick="toggleUploaderPause('${file.name}')" class="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-indigo-400 shrink-0 select-none">
+                                <i id="icon-pause-${queueId}" data-lucide="pause" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button onclick="cancelActiveUpload('${file.name}')" class="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-red-400 shrink-0 select-none">
+                                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="flex items-center space-x-3">
                         <div class="flex-grow bg-slate-950 rounded-full h-1.5 overflow-hidden">
@@ -840,7 +852,7 @@
                         <span id="percent-${queueId}" class="text-[9px] font-bold font-mono text-slate-400 w-8 text-right shrink-0">0%</span>
                     </div>
                     <div class="flex justify-between items-center bg-slate-950/40 p-1.5 rounded-lg text-[9px] font-bold text-slate-500 font-mono">
-                        <span id="speed-${queueId}">Connecting...</span>
+                        <span id="speed-${queueId}">Pre-allocating hashes...</span>
                         <span>${formatBytes(file.size)}</span>
                     </div>
                 `;
@@ -850,82 +862,200 @@
                 // Compute total active uploads count indicator badge
                 updateQueueIndicators();
 
-                // Execute Ktor Multipart post upload
-                const xhr = new XMLHttpRequest();
-                const formData = new FormData();
-                formData.append('file', file);
+                // Start chunked upload
+                processChunkedUpload(file, fileId, queueId);
+            }
+        }
 
-                xhr.open('POST', `/upload?path=${encodeURIComponent(currentPath)}`, true);
+        async function processChunkedUpload(file, fileId, queueId) {
+            const chunkSize = 1024 * 512; // 512 KB per chunk
+            const totalChunks = Math.ceil(file.size / chunkSize);
+            let uploadedIndexes = [];
 
-                // Track upload progress
-                let lastTime = Date.now();
-                let lastLoaded = 0;
-
-                xhr.upload.addEventListener('progress', (e) => {
-                    if (e.lengthComputable) {
-                        const percent = Math.round((e.loaded / e.total) * 100);
-                        document.getElementById(`bar-${queueId}`).style.width = percent + '%';
-                        document.getElementById(`percent-${queueId}`).textContent = percent + '%';
-
-                        // Calculate instant transfer speed
-                        const now = Date.now();
-                        const timeDiff = (now - lastTime) / 1000;
-                        if (timeDiff >= 0.5) {
-                            const bytesDiff = e.loaded - lastLoaded;
-                            const speed = bytesDiff / timeDiff;
-                            document.getElementById(`speed-${queueId}`).textContent = `${formatBytes(speed)}/s`;
-                            lastTime = now;
-                            lastLoaded = e.loaded;
-                        }
+            // Helper function to query server for already uploaded chunks
+            async function getUploadedChunks() {
+                try {
+                    const res = await fetch(`/upload-status?fileId=${fileId}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        return data.uploadedChunks || [];
                     }
-                });
+                } catch (e) {
+                    console.error("Failed querying uploaded chunks status", e);
+                }
+                return [];
+            }
 
-                xhr.onreadystatechange = () => {
-                    if (xhr.readyState === XMLHttpRequest.DONE) {
-                        if (xhr.status === 200) {
-                            // Style Success checkmark
-                            document.getElementById(`bar-${queueId}`).className = "bg-emerald-500 h-full w-[100%] rounded-full";
-                            document.getElementById(`percent-${queueId}`).className = "text-[9px] font-bold text-emerald-400 w-8 text-right shrink-0";
-                            document.getElementById(`percent-${queueId}`).textContent = "DONE";
-                            document.getElementById(`speed-${queueId}`).className = "text-emerald-400";
-                            document.getElementById(`speed-${queueId}`).textContent = "Transfer Completed";
-                            
-                            // Remove tracker records after short delays
-                            setTimeout(() => {
-                                delete activeUploads[file.name];
-                                updateQueueIndicators();
-                            }, 1500);
+            // Calculate chunk SHA-256
+            async function computeSHA256(arrayBuffer) {
+                const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            }
 
-                            refreshExplorer();
+            let startTime = Date.now();
+            
+            // Query upload progression to enable auto-resuming from middle index
+            uploadedIndexes = await getUploadedChunks();
+            let totalLoaded = 0;
+
+            for (let i = 0; i < totalChunks; i++) {
+                if (cancelledUploads.has(file.name)) {
+                    return; // Aborted
+                }
+
+                // Wait loop if paused
+                while (activeUploads[file.name] && activeUploads[file.name].isPaused) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    if (cancelledUploads.has(file.name)) return;
+                }
+
+                const start = i * chunkSize;
+                const end = Math.min(start + chunkSize, file.size);
+
+                if (uploadedIndexes.includes(i)) {
+                    totalLoaded += (end - start);
+                    const percent = Math.round((totalLoaded / file.size) * 100);
+                    const progressBar = document.getElementById(`bar-${queueId}`);
+                    const percentText = document.getElementById(`percent-${queueId}`);
+                    if (progressBar) progressBar.style.width = percent + '%';
+                    if (percentText) percentText.textContent = percent + '%';
+                    continue; // Skip already uploaded block
+                }
+
+                const blobSlice = file.slice(start, end);
+                const arrayBuffer = await blobSlice.arrayBuffer();
+
+                let chunkHash = "";
+                try {
+                    chunkHash = await computeSHA256(arrayBuffer);
+                } catch (e) {
+                    console.error("SHA-256 calculation error", e);
+                }
+
+                let success = false;
+                let attempts = 0;
+
+                while (!success && attempts < 5) {
+                    if (cancelledUploads.has(file.name)) return;
+
+                    try {
+                        const response = await fetch(`/upload?chunked=true&fileId=${fileId}&fileName=${encodeURIComponent(file.name)}&chunkIndex=${i}&totalChunks=${totalChunks}&chunkHash=${chunkHash}&path=${encodeURIComponent(currentPath)}`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/octet-stream'
+                            },
+                            body: arrayBuffer
+                        });
+
+                        if (response.ok) {
+                            success = true;
+                            totalLoaded += (end - start);
+
+                            const percent = Math.round((totalLoaded / file.size) * 100);
+                            const progressBar = document.getElementById(`bar-${queueId}`);
+                            const percentText = document.getElementById(`percent-${queueId}`);
+                            if (progressBar) progressBar.style.width = percent + '%';
+                            if (percentText) percentText.textContent = percent + '%';
+
+                            const now = Date.now();
+                            const elapsed = (now - startTime) / 1000;
+                            if (elapsed > 0) {
+                                const currentSpeed = totalLoaded / elapsed;
+                                const speedText = document.getElementById(`speed-${queueId}`);
+                                if (speedText) {
+                                    speedText.textContent = `${formatBytes(currentSpeed)}/s (Chunk ${i + 1}/${totalChunks})`;
+                                }
+                            }
                         } else {
-                            // Style Error state
-                            document.getElementById(`bar-${queueId}`).className = "bg-red-500 h-full w-[100%] rounded-full";
-                            document.getElementById(`percent-${queueId}`).className = "text-[9px] font-bold text-red-400 w-8 text-right shrink-0";
-                            document.getElementById(`percent-${queueId}`).textContent = "ERR";
-                            document.getElementById(`speed-${queueId}`).className = "text-red-400";
-                            document.getElementById(`speed-${queueId}`).textContent = "Connection Disrupted";
-
-                            setTimeout(() => {
-                                delete activeUploads[file.name];
-                                updateQueueIndicators();
-                            }, 4000);
+                            attempts++;
+                            console.warn(`Chunk ${i} upload failed with status ${response.status}. Attempt ${attempts}/5...`);
+                            await new Promise(resolve => setTimeout(resolve, 2000));
                         }
-                    }
-                };
+                    } catch (e) {
+                        attempts++;
+                        console.error(`Network error on chunk ${i}, attempt ${attempts}/5...`, e);
 
-                // Store reference to allow cancellation
-                activeUploads[file.name].xhr = xhr;
-                xhr.send(formData);
-            });
+                        // Trigger visual alert reconnect message
+                        const speedText = document.getElementById(`speed-${queueId}`);
+                        if (speedText) {
+                            speedText.textContent = "Disrupted. Auto-reconnecting...";
+                            speedText.className = "text-amber-400 font-bold animate-pulse";
+                        }
+
+                        // Sleep or wait for actual internet online triggers
+                        await new Promise(resolve => {
+                            if (navigator.onLine) {
+                                setTimeout(resolve, 3000);
+                            } else {
+                                window.addEventListener('online', function onlineHandler() {
+                                    window.removeEventListener('online', onlineHandler);
+                                    if (speedText) speedText.className = "text-indigo-400";
+                                    resolve();
+                                }, { once: true });
+                            }
+                        });
+                    }
+                }
+
+                if (!success) {
+                    const progressBar = document.getElementById(`bar-${queueId}`);
+                    const percentText = document.getElementById(`percent-${queueId}`);
+                    const speedText = document.getElementById(`speed-${queueId}`);
+                    if (progressBar) progressBar.className = "bg-red-500 h-full w-[100%] rounded-full";
+                    if (percentText) percentText.textContent = "ERR";
+                    if (speedText) {
+                        speedText.textContent = "Fatal: Upload failed after retries";
+                        speedText.className = "text-red-400 font-bold";
+                    }
+                    return;
+                }
+            }
+
+            // Sync visual complete metrics
+            const progressBar = document.getElementById(`bar-${queueId}`);
+            const percentText = document.getElementById(`percent-${queueId}`);
+            const speedText = document.getElementById(`speed-${queueId}`);
+            if (progressBar) progressBar.className = "bg-emerald-500 h-full w-[100%] rounded-full";
+            if (percentText) {
+                percentText.className = "text-[9px] font-bold text-emerald-400 w-8 text-right shrink-0";
+                percentText.textContent = "DONE";
+            }
+            if (speedText) {
+                speedText.className = "text-emerald-400 font-bold";
+                speedText.textContent = "Verified & Synced";
+            }
+
+            setTimeout(() => {
+                delete activeUploads[file.name];
+                updateQueueIndicators();
+            }, 1500);
+
+            refreshExplorer();
+        }
+
+        function toggleUploaderPause(fileName) {
+            const upload = activeUploads[fileName];
+            if (upload) {
+                upload.isPaused = !upload.isPaused;
+                const queueId = upload.id;
+                const icon = document.getElementById(`icon-pause-${queueId}`);
+                if (icon) {
+                    icon.setAttribute('data-lucide', upload.isPaused ? 'play' : 'pause');
+                    lucide.createIcons();
+                }
+                const speedText = document.getElementById(`speed-${queueId}`);
+                if (speedText) {
+                    speedText.textContent = upload.isPaused ? "Paused upload stream" : "Resuming transfer ticks...";
+                }
+            }
         }
 
         // Cancel specific upload in-flight
         function cancelActiveUpload(fileName) {
+            cancelledUploads.add(fileName);
             const upload = activeUploads[fileName];
             if (upload) {
-                if (upload.xhr) {
-                    upload.xhr.abort();
-                }
                 const row = document.getElementById(upload.id);
                 if (row) {
                     row.remove();

@@ -28,12 +28,15 @@ import kotlinx.coroutines.launch
 import java.io.InputStream
 import javax.inject.Inject
 
+import com.echosystem.localshare.security.TrustManager
+
 @HiltViewModel
 class EchoViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val deviceRegistry: DeviceRegistry,
     private val fileRepository: FileRepository,
     private val pairingManager: PairingManager,
+    val trustManager: TrustManager,
     private val nsdHelper: NsdHelper,
     private val httpClient: HttpClient,
     private val serverEventBus: ServerEventBus
@@ -57,6 +60,13 @@ class EchoViewModel @Inject constructor(
     val appCrashesLog: StateFlow<String> = _appCrashesLog.asStateFlow()
 
     init {
+        // Register telemetry providers for System Performance watchdog
+        com.echosystem.localshare.logging.PerformanceMonitor.registerSpeedProvider {
+            val ongoingCount = _transferProgress.value.count { it.status == TransferStatus.ONGOING }
+            Pair(ongoingCount, 0.0)
+        }
+        com.echosystem.localshare.logging.PerformanceMonitor.startMonitoring(viewModelScope)
+
         // Automatically generate a default PIN and auto-start network discovery
         generatePairingPin()
         startDiscovery()

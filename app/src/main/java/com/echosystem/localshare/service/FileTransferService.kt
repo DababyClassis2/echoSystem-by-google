@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import com.echosystem.localshare.discovery.NsdHelper
 import com.echosystem.localshare.repository.FileRepository
 import com.echosystem.localshare.security.PairingManager
+import com.echosystem.localshare.security.TrustManager
 import com.echosystem.localshare.server.ServerEventBus
 import com.echosystem.localshare.server.routes.deviceRoutes
 import com.echosystem.localshare.server.routes.fileRoutes
@@ -37,6 +38,7 @@ class FileTransferService : Service() {
     @Inject lateinit var nsdHelper: NsdHelper
     @Inject lateinit var fileRepository: FileRepository
     @Inject lateinit var pairingManager: PairingManager
+    @Inject lateinit var trustManager: TrustManager
     @Inject lateinit var serverEventBus: ServerEventBus
 
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -76,7 +78,7 @@ class FileTransferService : Service() {
             routing {
                 deviceRoutes(this@FileTransferService, pairingManager)
                 fileRoutes(fileRepository, serverEventBus, pairingManager)
-                pairingRoutes(pairingManager)
+                pairingRoutes(pairingManager, trustManager)
                 webSocketRoutes(serverEventBus)
             }
         }.start(wait = false)
