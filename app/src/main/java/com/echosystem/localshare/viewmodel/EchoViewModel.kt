@@ -297,6 +297,31 @@ class EchoViewModel @Inject constructor(
         loadLogs()
     }
 
+    fun disconnectDevice(device: Device) {
+        deviceRegistry.updateDeviceStatus(device.id, com.echosystem.localshare.model.DeviceStatus.DISCONNECTED)
+    }
+
+    fun revokeDevice(device: Device) {
+        viewModelScope.launch {
+            try {
+                // Potential remote revocation
+                httpClient.post("http://${device.ip}:${device.port}/pairing/revoke") {
+                    contentType(ContentType.Application.Json)
+                    setBody(com.echosystem.localshare.server.routes.PairingRequest(
+                        android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID),
+                        ""
+                    ))
+                }
+            } catch (e: Exception) {
+                AppLogger.logEvent("EchoViewModel", "Remote revoke failed: ${e.message}")
+            }
+            
+            pairingManager.revokePairing(device.id)
+            deviceRegistry.updateDeviceStatus(device.id, com.echosystem.localshare.model.DeviceStatus.DISCONNECTED)
+            deviceRegistry.updateDevicePairingStatus(device.id, false)
+        }
+    }
+
     private fun updateTransferProgress(id: String, progress: Float) {
         _transferProgress.update { list ->
             list.map { if (it.id == id || it.fileName == id) it.copy(progress = progress) else it }

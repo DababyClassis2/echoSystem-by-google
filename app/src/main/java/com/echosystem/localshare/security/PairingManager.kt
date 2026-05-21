@@ -44,6 +44,10 @@ class PairingManager @Inject constructor(
         return prefs.getBoolean("paired_$deviceId", false)
     }
 
+    fun revokePairing(deviceId: String) {
+        prefs.edit().remove("paired_$deviceId").apply()
+    }
+
     fun getDeviceNodeName(): String {
         return android.os.Build.MODEL
     }

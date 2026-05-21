@@ -44,6 +44,15 @@ class DeviceRegistry @Inject constructor() {
         updateList()
     }
 
+    fun updateDevicePairingStatus(id: String, isPaired: Boolean) {
+        _devices.update { current ->
+            current[id]?.let { device ->
+                current + (id to device.copy(isPaired = isPaired))
+            } ?: current
+        }
+        updateList()
+    }
+
     private fun updateList() {
         _deviceList.value = _devices.value.values.toList()
     }

@@ -740,7 +740,9 @@ fun SendFileScreen(viewModel: EchoViewModel) {
                                     pairPinInput = ""
                                     pairErrorMessage = null
                                 }
-                            }
+                            },
+                            onRevoke = { viewModel.revokeDevice(device) },
+                            onDisconnect = { viewModel.disconnectDevice(device) }
                         )
                     }
                 }

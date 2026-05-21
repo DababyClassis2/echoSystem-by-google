@@ -13,7 +13,7 @@ data class Device(
 )
 
 enum class DeviceStatus {
-    AVAILABLE, PAIRING, CONNECTED, BUSY
+    AVAILABLE, PAIRING, CONNECTED, BUSY, DISCONNECTED
 }
 
 @Serializable

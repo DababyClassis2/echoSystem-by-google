@@ -195,9 +195,13 @@ fun RadarAnimation(
 fun DeviceCard(
     device: Device,
     onClick: () -> Unit,
+    onRevoke: () -> Unit,
+    onDisconnect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    var showMenu by remember { mutableStateOf(false) }
+    
     Card(
         onClick = {
             try {
@@ -217,102 +221,134 @@ fun DeviceCard(
         ),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
     ) {
-        Row(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Elegant avatar icon indicating manufacturer/model/connection
-            Box(
+        Box {
+            Row(
                 modifier = Modifier
-                    .size(46.dp)
-                    .background(
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)
-                            )
-                        ),
-                        shape = CircleShape
-                    )
-                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), CircleShape),
-                contentAlignment = Alignment.Center
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = when {
-                        device.name.contains("Tv", ignoreCase = true) -> Icons.Default.Tv
-                        device.name.contains("Laptop", ignoreCase = true) || device.name.contains("Mac", ignoreCase = true) -> Icons.Default.Laptop
-                        else -> Icons.Default.Smartphone
-                    },
-                    contentDescription = "Device Avatar",
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = device.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.CompassCalibration,
-                        contentDescription = "IP Details",
-                        modifier = Modifier.size(12.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "${device.ip}:${device.port}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-            
-            // Paired Badge indicator
-            if (device.isPaired) {
+                // Elegant avatar icon indicating manufacturer/model/connection
                 Box(
                     modifier = Modifier
+                        .size(46.dp)
                         .background(
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(12.dp)
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)
+                                )
+                            ),
+                            shape = CircleShape
                         )
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), CircleShape),
+                    contentAlignment = Alignment.Center
                 ) {
+                    Icon(
+                        imageVector = when {
+                            device.name.contains("Tv", ignoreCase = true) -> Icons.Default.Tv
+                            device.name.contains("Laptop", ignoreCase = true) || device.name.contains("Mac", ignoreCase = true) -> Icons.Default.Laptop
+                            else -> Icons.Default.Smartphone
+                        },
+                        contentDescription = "Device Avatar",
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = device.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.VerifiedUser,
-                            contentDescription = "Secure Pairing Active",
+                            imageVector = Icons.Default.CompassCalibration,
+                            contentDescription = "IP Details",
                             modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Paired",
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold
+                            text = "${device.ip}:${device.port}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp
                         )
                     }
                 }
-            } else {
-                Text(
-                    text = "Tap to Connect",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Medium
-                )
+                
+                // Pairing action / options
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Device options")
+                }
+                
+                // Dropdown menu for revoke
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    if (device.isPaired) {
+                        DropdownMenuItem(
+                            text = { Text("Disconnect") },
+                            onClick = {
+                                showMenu = false
+                                onDisconnect()
+                            },
+                            leadingIcon = { Icon(Icons.Default.LinkOff, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Revoke Pairing") },
+                            onClick = {
+                                showMenu = false
+                                onRevoke()
+                            },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) }
+                        )
+                    }
+                }
+                
+                // Paired Badge indicator
+                if (device.isPaired) {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.VerifiedUser,
+                                contentDescription = "Secure Pairing Active",
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Paired",
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "Tap to Connect",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
     }

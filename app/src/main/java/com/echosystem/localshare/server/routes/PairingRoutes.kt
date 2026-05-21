@@ -23,4 +23,9 @@ fun Route.pairingRoutes(pairingManager: PairingManager, trustManager: TrustManag
             call.respond(HttpStatusCode.Unauthorized, "Invalid PIN")
         }
     }
+    post("/pairing/revoke") {
+        val request = call.receive<PairingRequest>()
+        pairingManager.revokePairing(request.deviceId)
+        call.respond(HttpStatusCode.OK, "Revoked")
+    }
 }
