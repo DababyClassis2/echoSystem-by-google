@@ -4,14 +4,16 @@ plugins {
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
+  alias(libs.plugins.hilt)
+  alias(libs.plugins.kotlin.serialization)
 }
 
 android {
-  namespace = "com.example"
+  namespace = "com.echosystem.localshare"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.echosystem.xprtqy"
+    applicationId = "com.echosystem.localshare"
     minSdk = 24
     targetSdk = 36
     versionCode = 1
@@ -91,15 +93,36 @@ dependencies {
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
-  implementation(libs.converter.moshi)
+  // implementation(libs.converter.moshi)
   // implementation(libs.firebase.ai)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
-  implementation(libs.logging.interceptor)
-  implementation(libs.moshi.kotlin)
-  implementation(libs.okhttp)
+  // implementation(libs.logging.interceptor)
+  // implementation(libs.moshi.kotlin)
+  // implementation(libs.okhttp)
   // implementation(libs.play.services.location)
-  implementation(libs.retrofit)
+  // implementation(libs.retrofit)
+
+  // Hilt
+  implementation(libs.hilt.android)
+  ksp(libs.hilt.compiler)
+
+  // Ktor Server
+  implementation(libs.ktor-server-core)
+  implementation(libs.ktor-server-netty)
+  implementation(libs.ktor-server-websockets)
+  implementation(libs.ktor-server-content-negotiation)
+  implementation(libs.ktor-serialization-kotlinx-json)
+
+  // Ktor Client
+  implementation(libs.ktor-client-core)
+  implementation(libs.ktor-client-cio)
+  implementation(libs.ktor-client-content-negotiation)
+
+  // Security & Data
+  implementation(libs.androidx.security.crypto)
+  implementation(libs.kotlinx.serialization.json)
+
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
