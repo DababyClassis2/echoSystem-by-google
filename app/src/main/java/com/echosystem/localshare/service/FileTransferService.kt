@@ -39,7 +39,7 @@ class FileTransferService : Service() {
     @Inject lateinit var pairingManager: PairingManager
     @Inject lateinit var serverEventBus: ServerEventBus
 
-    private var server: NettyApplicationEngine? = null
+    private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
 
@@ -74,7 +74,7 @@ class FileTransferService : Service() {
             }
             install(WebSockets)
             routing {
-                deviceRoutes(pairingManager)
+                deviceRoutes(this@FileTransferService, pairingManager)
                 fileRoutes(fileRepository, serverEventBus)
                 pairingRoutes(pairingManager)
                 webSocketRoutes(serverEventBus)

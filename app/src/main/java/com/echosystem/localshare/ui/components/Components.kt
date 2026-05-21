@@ -86,7 +86,7 @@ fun DeviceCard(device: Device, onClick: () -> Unit) {
                 Text(device.name, style = MaterialTheme.typography.titleMedium)
                 Text(device.ip, style = MaterialTheme.typography.bodySmall)
             }
-            Spacer(Modifier.weight(1) )
+            Spacer(Modifier.weight(1f) )
             if (device.isPaired) {
                 Text("Paired", color = Color.Green, style = MaterialTheme.typography.labelSmall)
             }

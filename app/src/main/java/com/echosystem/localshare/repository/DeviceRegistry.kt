@@ -13,10 +13,7 @@ import javax.inject.Singleton
 @Singleton
 class DeviceRegistry @Inject constructor() {
     private val _devices = MutableStateFlow<Map<String, Device>>(emptyMap())
-    val devices: StateFlow<List<Device>> = MutableStateFlow<List<Device>>(emptyList()).apply {
-        // In a real implementation, we would map the map to a list
-    }.asStateFlow() // Simplified for now, will update below
-
+    
     private val _deviceList = MutableStateFlow<List<Device>>(emptyList())
     val deviceList: StateFlow<List<Device>> = _deviceList.asStateFlow()
 

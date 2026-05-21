@@ -1,5 +1,6 @@
 plugins {
   alias(libs.plugins.android.application)
+  alias(libs.plugins.kotlin.android)
   alias(libs.plugins.hilt)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
@@ -53,6 +54,9 @@ android {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
   }
+  kotlinOptions {
+    jvmTarget = "11"
+  }
   buildFeatures {
     compose = true
     buildConfig = true
@@ -98,6 +102,7 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
   implementation(libs.androidx.navigation.compose)
+  implementation(libs.androidx.hilt.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)

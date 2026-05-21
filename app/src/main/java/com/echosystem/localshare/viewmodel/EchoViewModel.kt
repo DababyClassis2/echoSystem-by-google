@@ -11,7 +11,8 @@ import com.echosystem.localshare.repository.DeviceRegistry
 import com.echosystem.localshare.repository.FileRepository
 import com.echosystem.localshare.security.PairingManager
 import dagger.hilt.android.lifecycle.HiltViewModel
-import io.ktor.client.*
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
@@ -77,7 +78,11 @@ class EchoViewModel @Inject constructor(
                         }
                     ))
                     onUpload { bytesSentTotal, contentLength ->
-                        val progressValue = if (contentLength > 0) bytesSentTotal.toFloat() / contentLength else 0f
+                        val progressValue = if (contentLength != null && contentLength > 0L) {
+                            bytesSentTotal.toFloat() / contentLength
+                        } else {
+                            0f
+                        }
                         updateTransferProgress(transfer.id, progressValue)
                     }
                 }
