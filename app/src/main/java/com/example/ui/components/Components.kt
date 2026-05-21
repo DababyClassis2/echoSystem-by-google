@@ -19,7 +19,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -529,10 +529,24 @@ fun TransferHistoryItem(
 }
 
 @Composable
-fun EnterpriseVaultLogo(
+fun EchoRadarLogo(
     modifier: Modifier = Modifier,
     size: androidx.compose.ui.unit.Dp = 120.dp
 ) {
+    val infiniteTransition = rememberInfiniteTransition(label = "radar_logo")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(4000, easing = LinearEasing)),
+        label = "radar_rotation"
+    )
+    val sweepAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.1f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
+        label = "sweep_alpha"
+    )
+
     Box(
         modifier = modifier
             .size(size)
@@ -541,121 +555,75 @@ fun EnterpriseVaultLogo(
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val center = Offset(this.size.width / 2f, this.size.height / 2f)
-            val radius = (this.size.minDimension / 2f) * 0.85f
+            val radius = (this.size.minDimension / 2f) * 0.9f
 
-            // 1. Soft grounded dark shadow circle underneath
+            // 1. Dark glowing base
             drawCircle(
-                color = Color.Black.copy(alpha = 0.35f),
-                radius = radius * 1.05f,
-                center = center + Offset(0f, radius * 0.1f)
+                color = Color(0xFF011214), // Deepest Obsidian Cyan
+                radius = radius,
+                center = center
             )
 
-            // 2. Base Squircle / Rounded Outer Metallic Box
-            val squircleBrush = Brush.linearGradient(
-                colors = listOf(
-                    Color(0xFF8F9FA9), // Cool Pewter
-                    Color(0xFF384B66), // Chrome Blue-Grey
-                    Color(0xFF1F2937), // Navy Slate
-                    Color(0xFFCBD5E1)  // Brushed Silver Highlight
-                ),
-                start = Offset(0f, 0f),
-                end = Offset(this.size.width, this.size.height)
-            )
-            val cornerRad = radius * 0.618f
-            drawRoundRect(
-                brush = squircleBrush,
-                topLeft = center - Offset(radius, radius),
-                size = androidx.compose.ui.geometry.Size(radius * 2f, radius * 2f),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRad, cornerRad)
+            // 2. Outer ring glow
+            drawCircle(
+                color = Color(0xFF00E5FF).copy(alpha = 0.3f),
+                radius = radius,
+                center = center,
+                style = Stroke(width = 2.dp.toPx())
             )
 
-            // 3. Inner glossy bezel/inset (to convey vault precision)
-            val glassBezelBrush = Brush.linearGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = 0.8f),
-                    Color.Transparent,
-                    Color(0xFFC5A880).copy(alpha = 0.4f) // Subtle Champagne Gold reflection
-                ),
-                start = Offset(0f, 0f),
-                end = Offset(this.size.width, this.size.height)
-            )
-            drawRoundRect(
-                brush = glassBezelBrush,
-                topLeft = center - Offset(radius * 0.9f, radius * 0.9f),
-                size = androidx.compose.ui.geometry.Size(radius * 1.8f, radius * 1.8f),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRad * 0.9f, cornerRad * 0.9f),
-                style = Stroke(width = 3.dp.toPx())
-            )
-
-            // 4. Fluid, swirling, metallic "S" / Infinity ribbon over layout
-            val r = radius * 0.5f
-            val metallicPath = androidx.compose.ui.graphics.Path().apply {
-                moveTo(center.x + r * 0.3f, center.y - r * 1.0f)
-                cubicTo(
-                    center.x + r * 1.5f, center.y - r * 0.8f,
-                    center.x + r * 1.3f, center.y + r * 0.1f,
-                    center.x, center.y
-                )
-                cubicTo(
-                    center.x - r * 1.3f, center.y - r * 0.1f,
-                    center.x - r * 1.5f, center.y + r * 0.8f,
-                    center.x - r * 0.3f, center.y + r * 1.0f
+            // 3. Grid rings
+            for (i in 1..3) {
+                drawCircle(
+                    color = Color(0xFF00E5FF).copy(alpha = 0.15f),
+                    radius = radius * (i / 3f),
+                    center = center,
+                    style = Stroke(width = 1.dp.toPx())
                 )
             }
-            
-            // Background shadow of the ribbon
-            drawPath(
-                path = metallicPath,
-                color = Color.Black.copy(alpha = 0.45f),
-                style = Stroke(width = 14.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+
+            // 4. Axis lines
+            drawLine(
+                color = Color(0xFF00E5FF).copy(alpha = 0.2f),
+                start = Offset(center.x - radius, center.y),
+                end = Offset(center.x + radius, center.y),
+                strokeWidth = 1.dp.toPx()
             )
-            // Metallic gradient fill of the ribbon (Chrome Slate & Amber Gold reflect)
-            val ribbonBrush = Brush.linearGradient(
-                colors = listOf(
-                    Color(0xFFCBD5E1), // Satin Silver Star
-                    Color(0xFF4A5568), // Dark Chrome
-                    Color(0xFF1E293B), // Deep Slate Navy
-                    Color(0xFFEADCC6), // Warm Gold reflection
-                    Color(0xFF8F9FA9)  // Pewter Grey
-                ),
-                start = Offset(center.x - r, center.y - r),
-                end = Offset(center.x + r, center.y + r)
-            )
-            drawPath(
-                path = metallicPath,
-                brush = ribbonBrush,
-                style = Stroke(width = 10.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(
+                color = Color(0xFF00E5FF).copy(alpha = 0.2f),
+                start = Offset(center.x, center.y - radius),
+                end = Offset(center.x, center.y + radius),
+                strokeWidth = 1.dp.toPx()
             )
 
-            // 5. Specular Glare (Cool gloss highlights)
-            val shinePath = androidx.compose.ui.graphics.Path().apply {
-                moveTo(center.x + r * 0.6f, center.y - r * 0.9f)
-                cubicTo(
-                    center.x + r * 1.2f, center.y - r * 0.7f,
-                    center.x + r * 1.1f, center.y - r * 0.2f,
-                    center.x + r * 0.2f, center.y - r * 0.4f
+            // 5. Rotating sweep
+            withTransform({
+                rotate(rotation, center)
+            }) {
+                val sweepBrush = Brush.sweepGradient(
+                    0f to Color.Transparent,
+                    0.25f to Color(0xFF00E5FF).copy(alpha = sweepAlpha),
+                    0.5f to Color.Transparent
                 )
-            }
-            drawPath(
-                path = shinePath,
-                color = Color.White.copy(alpha = 0.55f),
-                style = Stroke(width = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
-            )
+                drawCircle(
+                    brush = sweepBrush,
+                    radius = radius * 0.98f,
+                    center = center
+                )
 
-            // 6. Gold reflex highlight edge at the lower ribbon bend
-            val goldReflectPath = androidx.compose.ui.graphics.Path().apply {
-                moveTo(center.x - r * 0.2f, center.y + r * 0.4f)
-                cubicTo(
-                    center.x - r * 1.1f, center.y + r * 0.2f,
-                    center.x - r * 1.2f, center.y + r * 0.7f,
-                    center.x - r * 0.6f, center.y + r * 0.9f
+                // Leading sweep line
+                drawLine(
+                    color = Color(0xFF00E5FF),
+                    start = center,
+                    end = Offset(center.x + radius * 0.98f, center.y),
+                    strokeWidth = 2.5.dp.toPx()
                 )
             }
-            drawPath(
-                path = goldReflectPath,
-                color = Color(0xFFC5A880).copy(alpha = 0.6f),
-                style = Stroke(width = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
-            )
+
+            // 6. Detected "Blips" (Random static points for tech feel)
+            val blipColor = Color(0xFFFFD600) // Atomic Yellow
+            drawCircle(color = blipColor.copy(alpha = 0.8f), radius = 3.dp.toPx(), center = center + Offset(radius * 0.4f, -radius * 0.3f))
+            drawCircle(color = blipColor.copy(alpha = 0.4f), radius = 2.dp.toPx(), center = center + Offset(-radius * 0.6f, radius * 0.2f))
         }
     }
 }

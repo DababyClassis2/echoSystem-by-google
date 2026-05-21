@@ -47,12 +47,9 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
 
     // Protocols
     private val _protocols = MutableStateFlow(
-        mapOf(
-            Protocol.BLE to true,
-            Protocol.NSD to true,
-            Protocol.UDP to true,
-            Protocol.WIFI_DIRECT to true
-        )
+        Protocol.values().associateWith { protocol ->
+            sharedPrefs.getBoolean("protocol_${protocol.name}", true)
+        }
     )
     val protocols = _protocols.asStateFlow()
 
@@ -729,10 +726,16 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleProtocol(protocol: Protocol) {
         _protocols.update { current ->
             val updated = current.toMutableMap()
-            updated[protocol] = !(current[protocol] ?: true)
+            val nextValue = !(current[protocol] ?: true)
+            updated[protocol] = nextValue
+            sharedPrefs.edit().putBoolean("protocol_${protocol.name}", nextValue).apply()
             updated
         }
-        filterAndPopulateDevices()
+        if (_isScanning.value) {
+            forceScanRefresh()
+        } else {
+            filterAndPopulateDevices()
+        }
     }
 
     fun toggleFileSelection(fileId: String) {

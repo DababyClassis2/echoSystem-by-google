@@ -93,7 +93,7 @@ fun OnboardingScreen(
                 modifier = Modifier.padding(bottom = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
-                EnterpriseVaultLogo(size = 150.dp)
+                EchoRadarLogo(size = 150.dp)
             }
 
             Spacer(Modifier.height(32.dp))
@@ -345,42 +345,36 @@ fun HomeScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         RadarAnimation(isActive = isScanning) {
-                            EnterpriseVaultLogo(size = 80.dp)
+                            EchoRadarLogo(size = 80.dp)
                         }
                     }
 
                     Spacer(Modifier.height(16.dp))
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Button(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.toggleScanning()
+                        },
+                        shape = PillShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isScanning) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .testTag("toggle_scan_button")
                     ) {
-                        Button(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                viewModel.toggleScanning()
-                            },
-                            shape = PillShape,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isScanning) MaterialTheme.colorScheme.outlineVariant 
-                                                 else MaterialTheme.colorScheme.primary
-                            ),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isScanning) Icons.Rounded.PowerSettingsNew else Icons.Rounded.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = if (isScanning) "Stop Radiating" else "Start Scan",
-                                style = MaterialTheme.typography.labelLarge.copy(
-                                    color = if (isScanning) MaterialTheme.colorScheme.onSurface 
-                                            else MaterialTheme.colorScheme.onPrimary
-                                )
-                            )
-                        }
+                        Icon(
+                            imageVector = if (isScanning) Icons.Rounded.PowerSettingsNew else Icons.Rounded.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = if (isScanning) "Deactivate Radar Pulse" else "Initialize Discovery Scan",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                        )
                     }
                 }
             }
@@ -2040,6 +2034,12 @@ fun SettingsScreen(
                                     viewModel.setLocalDeviceName("EchoPeer")
                                     viewModel.setAutoAccept(false)
                                     viewModel.setRequirePairing(true)
+                                    // Reset protocols to default
+                                    Protocol.values().forEach { protocol ->
+                                        if (viewModel.protocols.value[protocol] == false) {
+                                            viewModel.toggleProtocol(protocol)
+                                        }
+                                    }
                                     android.widget.Toast.makeText(context, "Full App Configurations Restored!", android.widget.Toast.LENGTH_SHORT).show()
                                 },
                                 shape = PillShape,
