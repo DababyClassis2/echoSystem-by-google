@@ -50,176 +50,36 @@ import com.echosystem.localshare.viewmodel.EchoViewModel
 import kotlinx.coroutines.launch
 import java.io.File
 
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.echosystem.localshare.ui.navigation.AppBottomNavigationBar
+import com.echosystem.localshare.ui.navigation.Screen
+
 @Composable
 fun MainScreen(viewModel: EchoViewModel = hiltViewModel()) {
     var showOnboarding by remember { mutableStateOf(true) }
-    var selectedTab by remember { mutableIntStateOf(0) }
     val webShareViewModel: WebShareViewModel = hiltViewModel()
-    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val navController = rememberNavController()
 
     if (showOnboarding) {
         OnboardingScreen(onGetStarted = { showOnboarding = false })
     } else {
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val isTablet = maxWidth > 600.dp
-            
-            // Define tab items info for iterations (clean & structured)
-            val tabs = listOf(
-                Triple("Home", Icons.Filled.Home, Icons.Outlined.Home),
-                Triple("Send", Icons.Filled.Upload, Icons.Outlined.Upload),
-                Triple("Receive", Icons.Filled.Download, Icons.Outlined.Download),
-                Triple("History", Icons.Filled.History, Icons.Outlined.History),
-                Triple("Web", Icons.Filled.Language, Icons.Outlined.Language),
-                Triple("Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
-                Triple("Developer", Icons.Filled.DeveloperMode, Icons.Outlined.DeveloperMode)
-            )
-
-            if (!isTablet) {
-                // PHONE LAYOUT: bottom bar scaffold
-                Scaffold(
-                    bottomBar = {
-                        NavigationBar(
-                            modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
-                            containerColor = MaterialTheme.colorScheme.background,
-                            tonalElevation = 8.dp
-                        ) {
-                            tabs.forEachIndexed { index, tab ->
-                                val (title, filledIcon, outlinedIcon) = tab
-                                NavigationBarItem(
-                                    icon = {
-                                        Icon(
-                                            imageVector = if (selectedTab == index) filledIcon else outlinedIcon,
-                                            contentDescription = title
-                                        )
-                                    },
-                                    label = { Text(title, style = MaterialTheme.typography.labelSmall) },
-                                    selected = selectedTab == index,
-                                    onClick = {
-                                        try {
-                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                        } catch (e: Exception) { e.printStackTrace() }
-                                        selectedTab = index
-                                    },
-                                    modifier = Modifier.testTag("tab_${title.lowercase().replace(" ", "_")}")
-                                )
-                            }
-                        }
-                    }
-                ) { padding ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(padding)
-                            .background(MaterialTheme.colorScheme.background)
-                    ) {
-                        AnimatedContent(
-                            targetState = selectedTab,
-                            transitionSpec = {
-                                fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) togetherWith 
-                                fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
-                            },
-                            label = "TabTransition"
-                        ) { targetTab ->
-                            when (targetTab) {
-                                0 -> PortalHomeScreen(viewModel)
-                                1 -> SendFileScreen(viewModel)
-                                2 -> ReceiveRadarScreen(viewModel)
-                                3 -> HistoryLedgerScreen(viewModel)
-                                4 -> WebShareScreen(webShareViewModel)
-                                5 -> SettingsScreen(viewModel)
-                                6 -> DeveloperAuditorScreen(viewModel)
-                                else -> PortalHomeScreen(viewModel)
-                            }
-                        }
-                    }
-                }
-            } else {
-                // TABLET LAYOUT: side navigation rail
-                Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                    NavigationRail(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .windowInsetsPadding(WindowInsets.safeDrawing),
-                        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
-                        header = {
-                            Box(
-                                modifier = Modifier
-                                    .padding(vertical = 24.dp)
-                                    .size(48.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Share,
-                                    contentDescription = "App Icon Logo",
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                        }
-                    ) {
-                        Spacer(modifier = Modifier.weight(1f))
-                        tabs.forEachIndexed { index, tab ->
-                            val (title, filledIcon, outlinedIcon) = tab
-                            NavigationRailItem(
-                                icon = {
-                                    Icon(
-                                        imageVector = if (selectedTab == index) filledIcon else outlinedIcon,
-                                        contentDescription = title
-                                    )
-                                },
-                                label = { Text(title, style = MaterialTheme.typography.labelSmall) },
-                                selected = selectedTab == index,
-                                onClick = {
-                                    try {
-                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                    } catch (e: Exception) { e.printStackTrace() }
-                                    selectedTab = index
-                                },
-                                modifier = Modifier.testTag("tab_rail_${title.lowercase().replace(" ", "_")}")
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                        }
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-
-                    // Content Canvas
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .background(MaterialTheme.colorScheme.background)
-                            .windowInsetsPadding(WindowInsets.safeDrawing)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .widthIn(max = 760.dp)
-                                .align(Alignment.TopCenter)
-                        ) {
-                            AnimatedContent(
-                                targetState = selectedTab,
-                                transitionSpec = {
-                                    fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) togetherWith 
-                                    fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
-                                },
-                                label = "TabletTabTransition"
-                            ) { targetTab ->
-                                when (targetTab) {
-                                    0 -> PortalHomeScreen(viewModel)
-                                    1 -> SendFileScreen(viewModel)
-                                    2 -> ReceiveRadarScreen(viewModel)
-                                    3 -> HistoryLedgerScreen(viewModel)
-                                    4 -> WebShareScreen(webShareViewModel)
-                                    5 -> SettingsScreen(viewModel)
-                                    6 -> DeveloperAuditorScreen(viewModel)
-                                    else -> PortalHomeScreen(viewModel)
-                                }
-                            }
-                        }
-                    }
-                }
+        Scaffold(
+            bottomBar = { AppBottomNavigationBar(navController = navController) }
+        ) { padding ->
+            NavHost(
+                navController = navController,
+                startDestination = Screen.Home.route,
+                modifier = Modifier.padding(padding)
+            ) {
+                composable(Screen.Home.route) { PortalHomeScreen(viewModel) }
+                composable(Screen.Send.route) { SendFileScreen(viewModel) }
+                composable(Screen.Receive.route) { ReceiveRadarScreen(viewModel) }
+                composable(Screen.History.route) { HistoryLedgerScreen(viewModel) }
+                composable(Screen.WebShare.route) { WebShareScreen(webShareViewModel) }
+                composable(Screen.Settings.route) { SettingsScreen(viewModel) }
+                composable(Screen.Developer.route) { DeveloperAuditorScreen(viewModel) }
             }
         }
     }
