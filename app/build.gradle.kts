@@ -1,16 +1,16 @@
 plugins {
   alias(libs.plugins.android.application)
+  alias(libs.plugins.hilt)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
+  alias(libs.plugins.kotlin.serialization)
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
-  alias(libs.plugins.hilt)
-  alias(libs.plugins.kotlin.serialization)
 }
 
 android {
   namespace = "com.echosystem.localshare"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
+  compileSdk = 35
 
   defaultConfig {
     applicationId = "com.echosystem.localshare"
@@ -58,6 +58,14 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+
+  packaging {
+    resources {
+      excludes += "/META-INF/{AL2.0,LGPL2.1}"
+      excludes += "/META-INF/INDEX.LIST"
+      excludes += "/META-INF/io.netty.versions.properties"
+    }
+  }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
@@ -108,16 +116,16 @@ dependencies {
   ksp(libs.hilt.compiler)
 
   // Ktor Server
-  implementation(libs.ktor-server-core)
-  implementation(libs.ktor-server-netty)
-  implementation(libs.ktor-server-websockets)
-  implementation(libs.ktor-server-content-negotiation)
-  implementation(libs.ktor-serialization-kotlinx-json)
+  implementation(libs.ktor.server.core)
+  implementation(libs.ktor.server.netty)
+  implementation(libs.ktor.server.websockets)
+  implementation(libs.ktor.server.content.negotiation)
+  implementation(libs.ktor.serialization.kotlinx.json)
 
   // Ktor Client
-  implementation(libs.ktor-client-core)
-  implementation(libs.ktor-client-cio)
-  implementation(libs.ktor-client-content-negotiation)
+  implementation(libs.ktor.client.core)
+  implementation(libs.ktor.client.cio)
+  implementation(libs.ktor.client.content.negotiation)
 
   // Security & Data
   implementation(libs.androidx.security.crypto)
