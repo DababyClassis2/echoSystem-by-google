@@ -1,46 +1,266 @@
 package com.echosystem.localshare.web
 
 import android.content.Context
+import io.ktor.http.*
+import io.ktor.http.content.*
+import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
-import io.ktor.server.application.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import io.ktor.http.*
+import io.ktor.server.websocket.*
+import io.ktor.websocket.*
+import kotlinx.coroutines.*
 import java.io.File
+import java.io.FileOutputStream
+import java.net.URLConnection
+import java.util.Collections
 
 class WebShareServer(private val context: Context) {
 
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
     private val port = 8989
+    private var serverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // Active WebSocket connection sessions to broadcast real-time syncs
+    private val activeSessions = Collections.synchronizedSet(mutableSetOf<DefaultWebSocketServerSession>())
 
     fun start() {
         if (server != null) return
+        serverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
         server = embeddedServer(Netty, port = port) {
+            install(WebSockets)
+
             routing {
+                // 1. Main Home Gateway Dashboard
                 get("/") {
                     call.respondText(loadDashboardHtml(), ContentType.Text.Html)
                 }
 
+                // 2. Folder Navigation recursive explorer
                 get("/files") {
-                    val files = getSharedFiles()
-                    // Manually serialize files to JSON Array string to prevent serialization errors
-                    val json = files.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }
-                    call.respondText(json, ContentType.Application.Json)
+                    val receivedDir = getReceivedDirectory()
+                    val reqPath = call.parameters["path"] ?: ""
+                    val targetDir = File(receivedDir, reqPath).canonicalFile
+
+                    // Check for directory traversal attacks
+                    if (!targetDir.startsWith(receivedDir.canonicalFile)) {
+                        call.respond(HttpStatusCode.BadRequest, "Invalid directory path requested")
+                        return@get
+                    }
+
+                    if (!targetDir.exists()) {
+                        targetDir.mkdirs()
+                    }
+
+                    val dirsJson = mutableListOf<String>()
+                    val filesJson = mutableListOf<String>()
+
+                    targetDir.listFiles()?.forEach { file ->
+                        val relativePath = file.relativeTo(receivedDir).path.replace("\\", "/")
+                        if (file.isDirectory) {
+                            dirsJson.add("""{"name": "${escapeJson(file.name)}", "path": "${escapeJson(relativePath)}"}""")
+                        } else {
+                            val size = file.length()
+                            val formatted = formatBytes(size)
+                            val ext = file.extension.lowercase()
+                            val type = getFileTypeCategory(ext)
+                            filesJson.add(
+                                """{
+                                    "name": "${escapeJson(file.name)}", 
+                                    "path": "${escapeJson(relativePath)}", 
+                                    "size": $size, 
+                                    "formattedSize": "$formatted", 
+                                    "type": "$type", 
+                                    "extension": "$ext"
+                                }""".trimIndent()
+                            )
+                        }
+                    }
+
+                    val response = """{
+                        "currentPath": "${escapeJson(reqPath)}",
+                        "directories": [${dirsJson.joinToString(",")}],
+                        "files": [${filesJson.joinToString(",")}]
+                    }""".trimIndent()
+
+                    call.respondText(response, ContentType.Application.Json)
                 }
 
-                get("/download/{filename}") {
-                    val name = call.parameters["filename"] ?: return@get
-                    var file = File(context.filesDir, name)
-                    if (!file.exists()) {
-                        val receivedDir = File(context.getExternalFilesDir(null), "Received")
-                        file = File(receivedDir, name)
+                // 3. File Preview snippet/binary service
+                get("/preview") {
+                    val receivedDir = getReceivedDirectory()
+                    val relativePath = call.parameters["path"] ?: ""
+                    val file = File(receivedDir, relativePath).canonicalFile
+
+                    if (!file.startsWith(receivedDir.canonicalFile) || !file.exists() || !file.isFile) {
+                        call.respond(HttpStatusCode.NotFound, "File not found")
+                        return@get
                     }
-                    if (file.exists()) {
+
+                    val ext = file.extension.lowercase()
+                    val type = getFileTypeCategory(ext)
+
+                    if (type == "image") {
+                        val mimeType = URLConnection.guessContentTypeFromName(file.name) ?: "image/jpeg"
                         call.respondFile(file)
+                    } else if (type == "document" && ext in listOf("txt", "log", "json", "xml", "md")) {
+                        val snippet = try {
+                            file.bufferedReader().use { reader ->
+                                val chars = CharArray(1024)
+                                val read = reader.read(chars)
+                                if (read > 0) String(chars, 0, read) else ""
+                            }
+                        } catch (e: Exception) {
+                            "Error reading preview snippet"
+                        }
+                        call.respondText(snippet, ContentType.Text.Plain)
                     } else {
-                        call.respond(HttpStatusCode.NotFound)
+                        call.respondText("Preview not supported for this format", ContentType.Text.Plain)
+                    }
+                }
+
+                // 4. Download Stream handler
+                get("/download") {
+                    val receivedDir = getReceivedDirectory()
+                    val relativePath = call.parameters["path"] ?: ""
+                    val file = File(receivedDir, relativePath).canonicalFile
+
+                    if (!file.startsWith(receivedDir.canonicalFile) || !file.exists() || !file.isFile) {
+                        call.respond(HttpStatusCode.NotFound, "File not found")
+                        return@get
+                    }
+
+                    call.response.header(HttpHeaders.ContentDisposition, "attachment; filename=\"${file.name}\"")
+                    call.respondFile(file)
+                }
+
+                // 5. Recursive File Delete handler
+                post("/delete") {
+                    val receivedDir = getReceivedDirectory()
+                    val relativePath = call.parameters["path"] ?: ""
+                    val file = File(receivedDir, relativePath).canonicalFile
+
+                    if (!file.startsWith(receivedDir.canonicalFile) || !file.exists()) {
+                        call.respond(HttpStatusCode.NotFound, "File or folder not found")
+                        return@post
+                    }
+
+                    val success = if (file.isDirectory) file.deleteRecursively() else file.delete()
+                    if (success) {
+                        broadcastToSockets("""{"type":"refresh"}""")
+                        call.respondText("Successfully deleted resource")
+                    } else {
+                        call.respond(HttpStatusCode.InternalServerError, "Failed to delete target resource")
+                    }
+                }
+
+                // 6. Manage creating Folders dynamically
+                post("/create-folder") {
+                    val receivedDir = getReceivedDirectory()
+                    val parentPath = call.parameters["path"] ?: ""
+                    val folderName = call.parameters["name"] ?: ""
+
+                    if (folderName.isEmpty()) {
+                        call.respond(HttpStatusCode.BadRequest, "Folder name is empty")
+                        return@post
+                    }
+
+                    val parentDir = File(receivedDir, parentPath).canonicalFile
+                    if (!parentDir.startsWith(receivedDir.canonicalFile)) {
+                        call.respond(HttpStatusCode.BadRequest, "Access outside boundaries")
+                        return@post
+                    }
+
+                    val newDir = File(parentDir, folderName)
+                    if (newDir.exists()) {
+                        call.respond(HttpStatusCode.Conflict, "Directory already exists")
+                        return@post
+                    }
+
+                    val created = newDir.mkdirs()
+                    if (created) {
+                        broadcastToSockets("""{"type":"refresh"}""")
+                        call.respondText("Folder created securely")
+                    } else {
+                        call.respond(HttpStatusCode.InternalServerError, "Failed to create directory")
+                    }
+                }
+
+                // 7. Secure File Upload with Socket notification triggers
+                post("/upload") {
+                    val receivedDir = getReceivedDirectory()
+                    val relativePath = call.parameters["path"] ?: ""
+                    val targetDir = File(receivedDir, relativePath).canonicalFile
+
+                    if (!targetDir.startsWith(receivedDir.canonicalFile)) {
+                        call.respond(HttpStatusCode.BadRequest, "Destination folder out of bounds")
+                        return@post
+                    }
+
+                    try {
+                        val multipart = call.receiveMultipart()
+                        val contentLength = call.request.header(HttpHeaders.ContentLength)?.toLongOrNull() ?: 1L
+
+                        multipart.forEachPart { part ->
+                            if (part is PartData.FileItem) {
+                                val fileName = part.originalFileName ?: "file_${System.currentTimeMillis()}"
+                                val targetFile = File(targetDir, fileName)
+
+                                broadcastToSockets("""{"type":"progress", "file":"${escapeJson(fileName)}", "progress":0}""")
+
+                                part.streamProvider().use { input ->
+                                    FileOutputStream(targetFile).use { output ->
+                                        val buffer = ByteArray(1024 * 64)
+                                        var totalBytesRead = 0L
+                                        var lastProgressTime = 0L
+
+                                        var readBytes = input.read(buffer)
+                                        while (readBytes >= 0) {
+                                            output.write(buffer, 0, readBytes)
+                                            totalBytesRead += readBytes
+
+                                            val now = System.currentTimeMillis()
+                                            if (now - lastProgressTime > 150) {
+                                                val progress = (totalBytesRead.toFloat() / contentLength * 100).toInt()
+                                                broadcastToSockets(
+                                                    """{"type":"progress", "file":"${escapeJson(fileName)}", "progress":$progress}"""
+                                                )
+                                                lastProgressTime = now
+                                            }
+                                            readBytes = input.read(buffer)
+                                        }
+                                    }
+                                }
+                                broadcastToSockets("""{"type":"progress", "file":"${escapeJson(fileName)}", "progress":100}""")
+                            }
+                            part.dispose()
+                        }
+
+                        broadcastToSockets("""{"type":"refresh"}""")
+                        call.respondText("Successfully uploaded")
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        call.respond(HttpStatusCode.InternalServerError, e.localizedMessage ?: "Failed raw upload")
+                    }
+                }
+
+                // 8. Dynamic WebSocket Event system for instant reactivity
+                webSocket("/ws") {
+                    activeSessions.add(this)
+                    try {
+                        for (frame in incoming) {
+                            if (frame is Frame.Text) {
+                                val text = frame.readText()
+                                // Process client ping or commands if any
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    } finally {
+                        activeSessions.remove(this)
                     }
                 }
             }
@@ -50,6 +270,34 @@ class WebShareServer(private val context: Context) {
     fun stop() {
         server?.stop(1000, 2000)
         server = null
+        activeSessions.clear()
+        try {
+            serverScope.cancel()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun getReceivedDirectory(): File {
+        val downloadDir = File(context.getExternalFilesDir(null), "Received")
+        if (!downloadDir.exists()) {
+            downloadDir.mkdirs()
+        }
+        return downloadDir
+    }
+
+    private fun broadcastToSockets(message: String) {
+        val sessionsCopy = synchronized(activeSessions) { activeSessions.toList() }
+        serverScope.launch {
+            for (session in sessionsCopy) {
+                try {
+                    session.send(Frame.Text(message))
+                } catch (e: Exception) {
+                    // remove stale session automatically if sending failed
+                    activeSessions.remove(session)
+                }
+            }
+        }
     }
 
     private fun loadDashboardHtml(): String {
@@ -57,63 +305,56 @@ class WebShareServer(private val context: Context) {
             context.assets.open("web/dashboard.html")
                 .bufferedReader().use { it.readText() }
         } catch (e: Exception) {
-            // High-fidelity fallback HTML if asset is not loaded
             FALLBACK_DASHBOARD_HTML
         }
     }
 
-    private fun getSharedFiles(): List<String> {
-        val filesList = mutableListOf<String>()
-        context.filesDir.list()?.toList()?.let { filesList.addAll(it) }
-        val receivedDir = File(context.getExternalFilesDir(null), "Received")
-        if (receivedDir.exists()) {
-            receivedDir.list()?.toList()?.let { filesList.addAll(it) }
+    private fun getFileTypeCategory(ext: String): String {
+        return when (ext) {
+            "png", "jpg", "jpeg", "webp", "gif", "svg" -> "image"
+            "mp4", "mkv", "mov", "avi", "webm", "3gp" -> "video"
+            "mp3", "wav", "m4a", "flac", "ogg" -> "music"
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "log", "json", "xml", "csv", "md" -> "document"
+            else -> "other"
         }
-        return filesList.distinct()
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes <= 0) return "0 B"
+        val k = 1024f
+        val sizes = listOf("B", "KB", "MB", "GB", "TB")
+        val i = Math.floor(Math.log(bytes.toDouble()) / Math.log(k.toDouble())).toInt()
+        val num = bytes / Math.pow(k.toDouble(), i.toDouble())
+        return "${String.format("%.1f", num)} ${sizes[i]}"
+    }
+
+    private fun escapeJson(str: String): String {
+        return str.replace("\\", "\\\\")
+                  .replace("\"", "\\\"")
+                  .replace("\b", "\\b")
+                  .replace("\u000C", "\\f")
+                  .replace("\n", "\\n")
+                  .replace("\r", "\\r")
+                  .replace("\t", "\\t")
     }
 
     companion object {
         private const val FALLBACK_DASHBOARD_HTML = """<!DOCTYPE html>
 <html>
 <head>
-    <title>LocalShare Web</title>
+    <title>LocalShare Web Gateway</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: sans-serif; padding: 20px; background-color: #f5f5f5; color: #333; }
-        .file { padding: 12px; border-bottom: 1px solid #ddd; background: white; margin-bottom: 8px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .title { font-size: 24px; margin-bottom: 20px; font-weight: bold; }
-        a { color: #3f51b5; text-decoration: none; font-weight: 500; }
+        body { font-family: sans-serif; padding: 24px; background-color: #0f172a; color: #f1f5f9; margin: 0; text-align: center; }
+        .box { padding: 32px; background-color: #1e293b; border-radius: 12px; max-width: 500px; margin: 40px auto; border: 1px solid #334155; }
+        h1 { margin-top: 0; color: #6366f1; }
     </style>
 </head>
 <body>
-    <div class="title">LocalShare Web Dashboard</div>
-    <div id="fileList">Loading files...</div>
-
-    <script>
-        async function loadFiles() {
-            try {
-                const res = await fetch('/files');
-                const files = await res.json();
-                const container = document.getElementById('fileList');
-                container.innerHTML = '';
-
-                if (files.length === 0) {
-                    container.innerHTML = '<div style="color: #666;">No files currently shared.</div>';
-                    return;
-                }
-
-                files.forEach(f => {
-                    const div = document.createElement('div');
-                    div.className = 'file';
-                    div.innerHTML = `<a href="/download/${"$"}{encodeURIComponent(f)}">${"$"}{f}</a>`;
-                    container.appendChild(div);
-                });
-            } catch (e) {
-                document.getElementById('fileList').textContent = 'Error loading files.';
-            }
-        }
-
-        loadFiles();
-    </script>
+    <div class="box">
+        <h1>LocalShare Web Portal</h1>
+        <p>Asset loading failed or was not integrated yet, but your HTTP server is running perfectly! Refreshing the view is recommended.</p>
+    </div>
 </body>
 </html>"""
     }
