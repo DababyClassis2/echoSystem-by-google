@@ -357,6 +357,10 @@
 
             wsConnection.onopen = () => {
                 console.log('Synchronized securely with companion Node live websocket');
+                const dot = document.querySelector('#connStatusText')?.previousElementSibling;
+                if (dot) {
+                    dot.className = "w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse";
+                }
             };
 
             wsConnection.onmessage = (event) => {
@@ -366,6 +370,11 @@
                         refreshExplorer();
                     } else if (data.type === 'progress') {
                         updateUploadProgress(data.file, data.progress);
+                    } else if (data.type === 'status') {
+                        const connText = document.getElementById('connStatusText');
+                        if (connText) {
+                            connText.textContent = `${data.device} • ${data.activeClients} Node(s)`;
+                        }
                     }
                 } catch (e) {
                     console.error('Error parsing sync frame', e);
@@ -374,6 +383,12 @@
 
             wsConnection.onclose = () => {
                 console.warn('Sync stream discontinued. Connecting fallback polling sync...');
+                const connText = document.getElementById('connStatusText');
+                if (connText) connText.textContent = "Offline — Reconnecting...";
+                const dot = document.querySelector('#connStatusText')?.previousElementSibling;
+                if (dot) {
+                    dot.className = "w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse";
+                }
                 // Retry connector after 5 seconds
                 setTimeout(connectWebSocket, 5000);
             };
@@ -922,12 +937,86 @@
 
         // Speed progress updates matching WebSocket
         function updateUploadProgress(fileName, progress) {
-            const upload = activeUploads[fileName];
-            if (upload) {
-                const bar = document.getElementById(`bar-${upload.id}`);
-                const percent = document.getElementById(`percent-${upload.id}`);
-                if (bar) bar.style.width = progress + '%';
-                if (percent) percent.textContent = progress + '%';
+            let upload = activeUploads[fileName];
+            if (!upload) {
+                // Remote upload or not started locally (e.g., initiated by companion client)
+                const queueId = 'up-rem-' + Math.random().toString(36).substring(2, 8);
+                activeUploads[fileName] = { id: queueId, size: 0, isRemote: true };
+                upload = activeUploads[fileName];
+
+                // Ensure Transmission panel is open/visible for transparency
+                const queuePanel = document.getElementById('queuePanel');
+                if (queuePanel) {
+                     queuePanel.classList.remove('translate-y-[calc(100%-48px)]');
+                     const minimizeBtn = document.getElementById('queueMinimizeBtn');
+                     if (minimizeBtn) minimizeBtn.innerHTML = `<i data-lucide="chevron-down" class="w-4 h-4"></i>`;
+                }
+                const emptyText = document.getElementById('queueEmpty');
+                if (emptyText) emptyText.classList.add('hidden');
+
+                const queueListBody = document.getElementById('queueListBody');
+                if (queueListBody) {
+                    const row = document.createElement('div');
+                    row.id = queueId;
+                    row.className = "bg-slate-900 border border-slate-800 p-3.5 rounded-xl space-y-2 relative";
+                    row.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2.5 min-w-0 flex-1">
+                                <i data-lucide="globe" class="w-4 h-4 text-teal-400 shrink-0"></i>
+                                <span class="text-xs font-bold text-slate-200 truncate pr-2" title="${fileName}">${fileName}</span>
+                            </div>
+                            <span class="text-[8px] bg-teal-500/15 text-teal-400 border border-teal-500/10 px-1.5 py-0.5 rounded-md font-extrabold uppercase shrink-0">Incoming Sync</span>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="flex-grow bg-slate-950 rounded-full h-1.5 overflow-hidden">
+                                <div id="bar-${queueId}" class="bg-indigo-600 h-full w-[0%] transition-all duration-150 rounded-full"></div>
+                            </div>
+                            <span id="percent-${queueId}" class="text-[9px] font-bold font-mono text-slate-400 w-8 text-right shrink-0">0%</span>
+                        </div>
+                        <div class="flex justify-between items-center bg-slate-950/40 p-1.5 rounded-lg text-[9px] font-bold text-slate-500 font-mono">
+                            <span id="speed-${queueId}">Transferring...</span>
+                            <span>Remote Stream</span>
+                        </div>
+                    `;
+                    queueListBody.appendChild(row);
+                    lucide.createIcons();
+                }
+                updateQueueIndicators();
+            }
+
+            // Update DOM progress
+            const bar = document.getElementById(`bar-${upload.id}`);
+            const percent = document.getElementById(`percent-${upload.id}`);
+            const speed = document.getElementById(`speed-${upload.id}`);
+
+            if (bar) bar.style.width = progress + '%';
+            if (percent) percent.textContent = progress + '%';
+
+            if (progress === 100) {
+                if (bar) bar.className = "bg-emerald-500 h-full w-[100%] rounded-full";
+                if (percent) {
+                    percent.className = "text-[9px] font-bold text-emerald-400 w-8 text-right shrink-0";
+                    percent.textContent = "DONE";
+                }
+                if (speed) {
+                    speed.className = "text-emerald-400";
+                    speed.textContent = "Transfer Completed";
+                }
+                
+                // Clear the row and active record after success highlight delay
+                setTimeout(() => {
+                    const row = document.getElementById(upload.id);
+                    if (row) row.remove();
+                    delete activeUploads[fileName];
+                    
+                    // Show empty state if nothing left
+                    const activeCount = Object.keys(activeUploads).length;
+                    if (activeCount === 0) {
+                        const empty = document.getElementById('queueEmpty');
+                        if (empty) empty.classList.remove('hidden');
+                    }
+                    updateQueueIndicators();
+                }, 2000);
             }
         }
 

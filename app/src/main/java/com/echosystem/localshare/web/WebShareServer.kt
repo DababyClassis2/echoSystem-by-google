@@ -251,6 +251,11 @@ class WebShareServer(private val context: Context) {
                 webSocket("/ws") {
                     activeSessions.add(this)
                     try {
+                        // Immediately respond with active connection status to the new client
+                        send(Frame.Text("""{"type":"status", "device":"${escapeJson(getDeviceName())}", "activeClients":${activeSessions.size}}"""))
+                        // Broadcast update to all other connected clients
+                        broadcastToSockets("""{"type":"status", "device":"${escapeJson(getDeviceName())}", "activeClients":${activeSessions.size}}""")
+
                         for (frame in incoming) {
                             if (frame is Frame.Text) {
                                 val text = frame.readText()
@@ -261,6 +266,8 @@ class WebShareServer(private val context: Context) {
                         e.printStackTrace()
                     } finally {
                         activeSessions.remove(this)
+                        // Broadcast the updated connection state to the remaining clients
+                        broadcastToSockets("""{"type":"status", "device":"${escapeJson(getDeviceName())}", "activeClients":${activeSessions.size}}""")
                     }
                 }
             }
@@ -275,6 +282,16 @@ class WebShareServer(private val context: Context) {
             serverScope.cancel()
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    private fun getDeviceName(): String {
+        val manufacturer = android.os.Build.MANUFACTURER ?: "Android"
+        val model = android.os.Build.MODEL ?: "Device"
+        return if (model.lowercase().startsWith(manufacturer.lowercase())) {
+            model
+        } else {
+            "$manufacturer $model"
         }
     }
 
