@@ -1,21 +1,19 @@
 plugins {
   alias(libs.plugins.android.application)
-  alias(libs.plugins.hilt)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
-  alias(libs.plugins.kotlinx.serialization)
 }
 
 android {
   namespace = "com.example"
-  compileSdk = 35
+  compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.echosystem.localshare"
+    applicationId = "com.aistudio.echosystem.xprtqy"
     minSdk = 24
-    targetSdk = 35
+    targetSdk = 36
     versionCode = 1
     versionName = "1.0"
 
@@ -58,14 +56,6 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
-
-  packaging {
-    resources {
-      excludes += "/META-INF/{AL2.0,LGPL2.1}"
-      excludes += "META-INF/INDEX.LIST"
-      excludes += "META-INF/io.netty.versions.properties"
-    }
-  }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
@@ -100,30 +90,6 @@ dependencies {
   implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
-  implementation(libs.androidx.security.crypto)
-
-  // Ktor Server
-  implementation(libs.ktor.server.core)
-  implementation(libs.ktor.server.netty)
-  implementation(libs.ktor.server.websockets)
-  implementation(libs.ktor.server.content.negotiation)
-  implementation(libs.ktor.server.partial.content)
-  implementation(libs.ktor.server.cors)
-  implementation(libs.ktor.serialization.kotlinx.json)
-
-  // Ktor Client
-  implementation(libs.ktor.client.android)
-  implementation(libs.ktor.client.content.negotiation)
-  implementation(libs.ktor.client.logging)
-
-  // Hilt
-  implementation(libs.hilt.android)
-  ksp(libs.hilt.compiler)
-  implementation(libs.hilt.navigation.compose)
-
-  // Serialization
-  implementation(libs.kotlinx.serialization.json)
-
   implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   // implementation(libs.firebase.ai)
