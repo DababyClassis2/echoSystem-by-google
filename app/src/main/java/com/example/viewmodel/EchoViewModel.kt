@@ -112,6 +112,11 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
     private val localUniqueId = UUID.randomUUID().toString().take(6)
     private val realDiscoveredDevices = mutableMapOf<String, Device>()
 
+    // HTTP Web Portal Server
+    private var webServer: HttpWebServer? = null
+    private val _webServerPort = MutableStateFlow(8085)
+    val webServerPort = _webServerPort.asStateFlow()
+
     // Core network networking coroutine jobs
     private var tcpServerJob: Job? = null
     private var udpReceiveJob: Job? = null
@@ -148,6 +153,28 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
 
         // 3. Start local Network Service Discovery (mDNS) registration & scanner
         startNsdServices()
+
+        // 4. Start HTTP Web Portal Server
+        val ws = HttpWebServer(
+            context = getApplication(),
+            allFilesFlow = _allFiles,
+            onUploadSuccess = { newFile ->
+                _allFiles.update { current ->
+                    val existingIds = current.map { it.id }.toSet()
+                    if (newFile.id !in existingIds) {
+                        current + newFile
+                    } else {
+                        current
+                    }
+                }
+            }
+        )
+        ws.start(viewModelScope)
+        webServer = ws
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(100)
+            _webServerPort.value = ws.activePort
+        }
     }
 
     private fun runTcpServerAcceptLoop(server: ServerSocket) {
@@ -939,6 +966,10 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         
         stopNsdDiscoveryAndRegistration()
         
+        try {
+            webServer?.stop()
+        } catch (ignored: Exception) {}
+
         try {
             tcpServerSocket?.close()
         } catch (ignored: Exception) {}

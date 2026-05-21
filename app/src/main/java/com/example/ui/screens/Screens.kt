@@ -38,6 +38,8 @@ import com.example.model.*
 import com.example.ui.components.*
 import com.example.ui.theme.*
 import com.example.viewmodel.EchoViewModel
+import android.content.Context
+import androidx.compose.foundation.text.selection.SelectionContainer
 
 // ==========================================
 // 1. ONBOARDING SCREEN
@@ -287,6 +289,94 @@ fun HomeScreen(
                                 )
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // WEB SHARE PORTAL CARD
+        item {
+            val ipAddress = viewModel.getLocalIpAddress()
+            val webPort by viewModel.webServerPort.collectAsState()
+            val context = androidx.compose.ui.platform.LocalContext.current
+            
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), shape = CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Language,
+                            contentDescription = "Web Portal",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    Spacer(Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Web Sharing Portal Active",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "Connect any PC/Phone browser to link:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        
+                        val shareUrl = "http://$ipAddress:$webPort"
+                        SelectionContainer {
+                            Text(
+                                text = shareUrl,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(8.dp))
+
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("Web Share Link", "http://$ipAddress:$webPort")
+                            clipboard.setPrimaryClip(clip)
+                            android.widget.Toast.makeText(context, "Link copied to clipboard!", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape = CircleShape)
+                            .size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ContentCopy,
+                            contentDescription = "Copy Link",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             }
