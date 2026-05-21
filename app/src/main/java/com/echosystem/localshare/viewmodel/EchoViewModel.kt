@@ -45,10 +45,14 @@ class EchoViewModel @Inject constructor(
     private val _pairingPin = MutableStateFlow<String?>(null)
     val pairingPin: StateFlow<String?> = _pairingPin.asStateFlow()
 
+    private val _ipAddress = MutableStateFlow(pairingManager.getLocalIp())
+    val ipAddress: StateFlow<String> = _ipAddress.asStateFlow()
+
     init {
         // Automatically generate a default PIN and auto-start network discovery
         generatePairingPin()
         startDiscovery()
+        loadReceivedFiles()
 
         // Synchronize with server events for real-time transfers (e.g. from nearby hosts)
         viewModelScope.launch {
@@ -182,7 +186,51 @@ class EchoViewModel @Inject constructor(
     }
 
     fun clearTransfers() {
-        _transferProgress.value = emptyList()
+        viewModelScope.launch {
+            try {
+                fileRepository.getReceivedFiles().forEach { file ->
+                    file.delete()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            _transferProgress.value = emptyList()
+        }
+    }
+
+    fun deleteFileFromHistory(fileName: String) {
+        viewModelScope.launch {
+            try {
+                fileRepository.deleteReceivedFile(fileName)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            _transferProgress.update { list ->
+                list.filterNot { it.fileName == fileName }
+            }
+        }
+    }
+
+    fun loadReceivedFiles() {
+        viewModelScope.launch {
+            try {
+                val files = fileRepository.getReceivedFiles()
+                val transfers = files.map { file ->
+                    FileTransfer(
+                        id = file.name,
+                        fileName = file.name,
+                        size = file.length(),
+                        progress = 1f,
+                        status = TransferStatus.COMPLETED,
+                        isIncoming = true,
+                        remoteDeviceName = "Nearby Node"
+                    )
+                }
+                _transferProgress.value = transfers
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     private fun updateTransferProgress(id: String, progress: Float) {

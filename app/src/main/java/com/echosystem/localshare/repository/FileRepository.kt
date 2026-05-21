@@ -56,4 +56,26 @@ class FileRepository @Inject constructor(
         }
         return targetFile
     }
+
+    fun getReceivedFiles(): List<File> {
+        val downloadDir = File(context.getExternalFilesDir(null), "Received")
+        if (!downloadDir.exists()) return emptyList()
+        return downloadDir.listFiles()?.filter { it.isFile } ?: emptyList()
+    }
+
+    fun deleteReceivedFile(fileName: String): Boolean {
+        val downloadDir = File(context.getExternalFilesDir(null), "Received")
+        val targetFile = File(downloadDir, fileName)
+        return if (targetFile.exists()) {
+            targetFile.delete()
+        } else {
+            false
+        }
+    }
+
+    fun getReceivedFilesDir(): File {
+        val downloadDir = File(context.getExternalFilesDir(null), "Received")
+        if (!downloadDir.exists()) downloadDir.mkdirs()
+        return downloadDir
+    }
 }

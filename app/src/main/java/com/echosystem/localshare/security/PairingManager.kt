@@ -47,4 +47,24 @@ class PairingManager @Inject constructor(
     fun getDeviceNodeName(): String {
         return android.os.Build.MODEL
     }
+
+    fun getLocalIp(): String {
+        try {
+            val interfaces = java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())
+            for (intf in interfaces) {
+                val addrs = java.util.Collections.list(intf.inetAddresses)
+                for (addr in addrs) {
+                    if (!addr.isLoopbackAddress) {
+                        val sAddr = addr.hostAddress ?: ""
+                        if (!sAddr.contains(":")) { // IPv4 checking
+                            return sAddr
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return "127.0.0.1"
+    }
 }

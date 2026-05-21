@@ -75,7 +75,7 @@ class FileTransferService : Service() {
             install(WebSockets)
             routing {
                 deviceRoutes(this@FileTransferService, pairingManager)
-                fileRoutes(fileRepository, serverEventBus)
+                fileRoutes(fileRepository, serverEventBus, pairingManager)
                 pairingRoutes(pairingManager)
                 webSocketRoutes(serverEventBus)
             }

@@ -274,6 +274,8 @@ fun OnboardingScreen(onGetStarted: () -> Unit) {
 fun HomeScreen(viewModel: EchoViewModel) {
     val devices by viewModel.devices.collectAsState()
     val transferProgress by viewModel.transferProgress.collectAsState()
+    val ipAddress by viewModel.ipAddress.collectAsState()
+    val pairingPin by viewModel.pairingPin.collectAsState()
     
     // Select device state
     var deviceToPair by remember { mutableStateOf<Device?>(null) }
@@ -337,7 +339,105 @@ fun HomeScreen(viewModel: EchoViewModel) {
                 Text("Scan Nearby Devices", fontWeight = FontWeight.SemiBold)
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Web Browser Portal Sharing Information Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f), RoundedCornerShape(20.dp)),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Language,
+                                    contentDescription = "Web Portal",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Web Sharing Gateway",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Share with computers, tablets, and iPhones",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Enter this URL in any browser on the same Wi-Fi network:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = "http://$ipAddress:8080",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Companion Access Key",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        ) {
+                            Text(
+                                text = pairingPin ?: "------",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
             
             // Section Head for list of devices
             Row(
@@ -624,7 +724,10 @@ fun HistoryScreen(viewModel: EchoViewModel) {
                     .fillMaxWidth()
             ) {
                 items(transfers.reversed()) { transfer ->
-                    TransferItemRow(transfer = transfer)
+                    TransferItemRow(
+                        transfer = transfer,
+                        onDelete = { viewModel.deleteFileFromHistory(transfer.fileName) }
+                    )
                 }
             }
         }
@@ -634,6 +737,7 @@ fun HistoryScreen(viewModel: EchoViewModel) {
 @Composable
 fun SettingsScreen(viewModel: EchoViewModel) {
     val pin by viewModel.pairingPin.collectAsState()
+    val ipAddress by viewModel.ipAddress.collectAsState()
 
     Column(
         modifier = Modifier
@@ -763,6 +867,14 @@ fun SettingsScreen(viewModel: EchoViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    Text("Local IP Address", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(ipAddress, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Text("Active Port", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("8080", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                 }
@@ -773,6 +885,14 @@ fun SettingsScreen(viewModel: EchoViewModel) {
                 ) {
                     Text("P2P Protocol", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("Ktor Server - Netty", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Browser Portal Link", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("http://$ipAddress:8080", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 }
             }
         }
