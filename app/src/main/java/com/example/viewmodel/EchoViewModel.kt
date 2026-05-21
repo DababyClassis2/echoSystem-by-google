@@ -32,8 +32,8 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
     val hasCompletedOnboarding = _hasCompletedOnboarding.asStateFlow()
 
     // App Theme Preference
-    // 0 = System Default, 1 = Light, 2 = Dark
-    private val _themePreference = MutableStateFlow(sharedPrefs.getInt("theme_preference", 0))
+    // 0 = System Default (Dark Cosmic fallback), 1 = Light, 2 = Dark
+    private val _themePreference = MutableStateFlow(sharedPrefs.getInt("theme_preference", 2))
     val themePreference = _themePreference.asStateFlow()
 
     fun setThemePreference(pref: Int) {

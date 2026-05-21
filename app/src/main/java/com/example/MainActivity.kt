@@ -25,6 +25,7 @@ import com.example.model.Protocol
 import com.example.ui.screens.*
 import com.example.ui.theme.MyApplicationTheme
 import com.example.viewmodel.EchoViewModel
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,11 +41,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-enum class NavigationTab(val title: String, val icon: ImageVector, val tag: String) {
-    HOME("Home", Icons.Rounded.Home, "tab_home"),
-    FILES("Files", Icons.Rounded.FolderOpen, "tab_files"),
-    TRANSFERS("Transfers", Icons.Rounded.SwapHoriz, "tab_transfers"),
-    SETTINGS("Settings", Icons.Rounded.Tune, "tab_settings")
+enum class NavigationTab(val title: String, val icon: ImageVector, val selectedIcon: ImageVector, val tag: String) {
+    HOME("Radar Share", Icons.Rounded.CellTower, Icons.Rounded.Radar, "tab_home"),
+    FILES("Files", Icons.Rounded.FolderOpen, Icons.Rounded.Folder, "tab_files"),
+    TRANSFERS("Transfers", Icons.Rounded.SwapHoriz, Icons.Rounded.SwapHorizontalCircle, "tab_transfers"),
+    SETTINGS("Settings", Icons.Rounded.Tune, Icons.Rounded.SettingsSuggest, "tab_settings")
 }
 
 @Composable
@@ -98,7 +99,36 @@ fun MainAppContainer(
 
 @Composable
 fun CompactLayout(viewModel: EchoViewModel) {
-    var selectedTab by remember { mutableStateOf(NavigationTab.HOME) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val tabs = NavigationTab.values()
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+        initialPage = 0,
+        pageCount = { tabs.size }
+    )
+    val coroutineScope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    val activity = remember(context) {
+        var ctx = context
+        while (ctx is android.content.ContextWrapper) {
+            if (ctx is android.app.Activity) {
+                break
+            }
+            ctx = ctx.baseContext
+        }
+        ctx as? android.app.Activity
+    }
+
+    androidx.activity.compose.BackHandler(enabled = true) {
+        if (pagerState.currentPage != 0) {
+            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+            coroutineScope.launch {
+                pagerState.animateScrollToPage(0)
+            }
+        } else {
+            activity?.moveTaskToBack(true)
+        }
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
@@ -109,25 +139,34 @@ fun CompactLayout(viewModel: EchoViewModel) {
                 tonalElevation = 3.dp,
                 modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
             ) {
-                NavigationTab.values().forEach { tab ->
+                tabs.forEachIndexed { index, tab ->
+                    val selected = pagerState.currentPage == index
                     NavigationBarItem(
-                        selected = selectedTab == tab,
-                        onClick = { selectedTab = tab },
+                        selected = selected,
+                        onClick = {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
                         icon = {
                             Icon(
-                                imageVector = tab.icon,
+                                imageVector = if (selected) tab.selectedIcon else tab.icon,
                                 contentDescription = tab.title,
-                                modifier = Modifier.testTag(tab.tag)
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .testTag(tab.tag)
                             )
                         },
                         label = {
                             Text(
                                 text = tab.title,
-                                style = MaterialTheme.typography.labelMedium
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
                             selectedTextColor = MaterialTheme.colorScheme.primary,
                             indicatorColor = MaterialTheme.colorScheme.primaryContainer,
                             unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -138,34 +177,30 @@ fun CompactLayout(viewModel: EchoViewModel) {
             }
         }
     ) { innerPadding ->
-        Column(
+        androidx.compose.foundation.pager.HorizontalPager(
+            state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-        ) {
-            // Screen switching using elegant transitions
-            AnimatedContent(
-                targetState = selectedTab,
-                transitionSpec = {
-                    fadeIn(tween(250)) togetherWith fadeOut(tween(200))
-                },
-                label = "compact_tab"
-            ) { target ->
-                when (target) {
-                    NavigationTab.HOME -> HomeScreen(
-                        viewModel = viewModel,
-                        onNavigateFileTab = { selectedTab = NavigationTab.FILES }
-                    )
-                    NavigationTab.FILES -> FileBrowserScreen(
-                        viewModel = viewModel
-                    )
-                    NavigationTab.TRANSFERS -> TransferTrackerScreen(
-                        viewModel = viewModel
-                    )
-                    NavigationTab.SETTINGS -> SettingsScreen(
-                        viewModel = viewModel
-                    )
-                }
+        ) { page ->
+            when (tabs[page]) {
+                NavigationTab.HOME -> HomeScreen(
+                    viewModel = viewModel,
+                    onNavigateFileTab = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(tabs.indexOf(NavigationTab.FILES))
+                        }
+                    }
+                )
+                NavigationTab.FILES -> FileBrowserScreen(
+                    viewModel = viewModel
+                )
+                NavigationTab.TRANSFERS -> TransferTrackerScreen(
+                    viewModel = viewModel
+                )
+                NavigationTab.SETTINGS -> SettingsScreen(
+                    viewModel = viewModel
+                )
             }
         }
     }
@@ -204,7 +239,7 @@ fun ExpandedLayout(viewModel: EchoViewModel) {
                     onClick = { selectedTab = tab },
                     icon = {
                         Icon(
-                            imageVector = tab.icon,
+                            imageVector = if (selectedTab == tab) tab.selectedIcon else tab.icon,
                             contentDescription = tab.title,
                             modifier = Modifier.testTag(tab.tag)
                         )

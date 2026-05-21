@@ -162,7 +162,10 @@ fun OnboardingScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (currentPage < pages.lastIndex) {
-                    TextButton(onClick = onDismiss) {
+                    TextButton(onClick = {
+                        viewModel.completeOnboarding()
+                        onDismiss()
+                    }) {
                         Text("Skip", style = MaterialTheme.typography.labelLarge)
                     }
                     Button(
@@ -207,10 +210,45 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val isScanning by viewModel.isScanning.collectAsState()
     val devices by viewModel.devicesList.collectAsState()
     val recentTransfers by viewModel.historyRecords.collectAsState()
     val protocolsEnabled by viewModel.protocols.collectAsState()
+
+    // Core P2P physical/wireless permissions required for sound background socket file transfer operations
+    val corePermissions = remember {
+        val list = mutableListOf<String>()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            list.add(android.Manifest.permission.NEARBY_WIFI_DEVICES)
+            list.add(android.Manifest.permission.POST_NOTIFICATIONS)
+            list.add(android.Manifest.permission.READ_MEDIA_IMAGES)
+            list.add(android.Manifest.permission.READ_MEDIA_VIDEO)
+        } else {
+            list.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+            list.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            list.add(android.Manifest.permission.BLUETOOTH_SCAN)
+            list.add(android.Manifest.permission.BLUETOOTH_CONNECT)
+            list.add(android.Manifest.permission.BLUETOOTH_ADVERTISE)
+        }
+        list
+    }
+
+    var basePermissionsGranted by remember {
+        mutableStateOf(
+            corePermissions.all {
+                androidx.core.content.ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            }
+        )
+    }
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        basePermissionsGranted = results.values.all { it }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -220,6 +258,60 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(top = 8.dp, bottom = 40.dp)
     ) {
+        // RADAR PERMISSION OUTLINE EXPLANATION
+        if (!basePermissionsGranted) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+                    ),
+                    border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.Security,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = "Radar Clearances Required",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "To scan for nearby offline peers, establish high-speed direct links, and transfer media securely (like Xender), EchoSystem requires system wireless and local storage permissions.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Button(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                permissionLauncher.launch(corePermissions.toTypedArray())
+                            },
+                            shape = PillShape,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error
+                            ),
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Rounded.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Grant All Required Radar Access", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+            }
+        }
+
         // RADAR ACTION CARD
         item {
             Card(
@@ -1478,14 +1570,68 @@ fun PinCell(text: String) {
 }
 
 // ==========================================
-// 6. SYSTEM SETTINGS SCREEN
+// 6. SYSTEM SETTINGS SCREEN (CASCADE FORM)
 // ==========================================
+@Composable
+fun SettingsCascadeHeader(
+    title: String,
+    icon: ImageVector,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() },
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = if (expanded) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (expanded) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Icon(
+                imageVector = if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
 @Composable
 fun SettingsScreen(
     viewModel: EchoViewModel,
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val deviceName by viewModel.localDeviceName.collectAsState()
     val autoAccept by viewModel.autoAccept.collectAsState()
     val requirePairing by viewModel.requirePairing.collectAsState()
@@ -1494,239 +1640,282 @@ fun SettingsScreen(
     var editingName by remember { mutableStateOf(false) }
     var tempName by remember { mutableStateOf(deviceName) }
 
+    // Cascade expansion states (compact, collapses default sizes from taking too much scroll room)
+    var identityExpanded by remember { mutableStateOf(false) }
+    var transceiversExpanded by remember { mutableStateOf(false) }
+    var themeExpanded by remember { mutableStateOf(false) }
+    var securityExpanded by remember { mutableStateOf(false) }
+    var systemExpanded by remember { mutableStateOf(false) }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(top = 8.dp, bottom = 40.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp)
     ) {
-        // PERSONAL IDENTITY SECTION
+        // == 1. DEVICE IDENTITY CASCADE
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "Local Identity",
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.primary,
-                        letterSpacing = 0.8.sp
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-
-                    if (editingName) {
-                        OutlinedTextField(
-                            value = tempName,
-                            onValueChange = { tempName = it },
-                            label = { Text("Custom Device Name") },
-                            singleLine = true,
-                            shape = MaterialTheme.shapes.medium,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("device_name_field"),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                            )
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            Button(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    viewModel.setLocalDeviceName(tempName)
-                                    editingName = false
-                                },
-                                shape = PillShape,
-                                modifier = Modifier.height(36.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                            ) {
-                                Text("Save Name")
-                            }
-                            TextButton(onClick = { editingName = false }) {
-                                Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    } else {
-                        Row(
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column {
-                                Text(
-                                    text = deviceName,
-                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                                )
-                                Text(
-                                    text = "Receiver ID: echo-f3e9a7",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    tempName = deviceName
-                                    editingName = true
-                                },
-                                modifier = Modifier.testTag("edit_name_button")
-                            ) {
-                                Icon(Icons.Rounded.Edit, contentDescription = "Edit name", tint = MaterialTheme.colorScheme.primary)
-                            }
-                        }
+            Column(modifier = Modifier.fillMaxWidth()) {
+                SettingsCascadeHeader(
+                    title = "Device Identity",
+                    icon = Icons.Rounded.AccountCircle,
+                    expanded = identityExpanded,
+                    onToggle = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        identityExpanded = !identityExpanded 
                     }
-                }
-            }
-        }
-
-        // DISCOVERY CHANNELS SWITCHES
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "Radio Transceivers",
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.primary,
-                        letterSpacing = 0.8.sp
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-
-                    Protocol.values().forEach { protocol ->
-                        val isEnabled = protocolsEnabled[protocol] ?: true
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = protocol.displayName,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium
+                )
+                AnimatedVisibility(
+                    visible = identityExpanded,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "Local Identity Profile",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 0.8.sp
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            if (editingName) {
+                                OutlinedTextField(
+                                    value = tempName,
+                                    onValueChange = { tempName = it },
+                                    label = { Text("Custom Device Name") },
+                                    singleLine = true,
+                                    shape = MaterialTheme.shapes.medium,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("device_name_field"),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                                    )
                                 )
-                                val detail = when (protocol) {
-                                    Protocol.BLE -> "Emits secure BLE advertisement pairing beacons."
-                                    Protocol.NSD -> "Locates mDNS/DNS-SD LAN network sockets."
-                                    Protocol.UDP -> "Transmits high-availability multicast discover pulses."
-                                    Protocol.WIFI_DIRECT -> "Operates high-performance hardware direct-link clusters."
+                                Spacer(Modifier.height(10.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Button(
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            viewModel.setLocalDeviceName(tempName)
+                                            editingName = false
+                                        },
+                                        shape = PillShape,
+                                        modifier = Modifier.height(36.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                    ) {
+                                        Text("Save Name", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                    TextButton(onClick = { editingName = false }) {
+                                        Text("Cancel", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
                                 }
-                                Text(
-                                    text = detail,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            } else {
+                                Row(
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = deviceName,
+                                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                                        )
+                                        Text(
+                                            text = "Receiver ID: echo_${deviceName.lowercase().hashCode().toString(16).take(6)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            tempName = deviceName
+                                            editingName = true
+                                        },
+                                        modifier = Modifier.testTag("edit_name_button")
+                                    ) {
+                                        Icon(Icons.Rounded.Edit, contentDescription = "Edit name", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
                             }
-
-                            Switch(
-                                checked = isEnabled,
-                                onCheckedChange = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    viewModel.toggleProtocol(protocol)
-                                },
-                                colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
-                            )
                         }
                     }
                 }
             }
         }
-        
-        // VISUAL THEME SELECTION SECTION
+
+        // == 2. DISCOVERY TRANSCEIVERS CASCADE
+        item {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                SettingsCascadeHeader(
+                    title = "Radio Transceivers",
+                    icon = Icons.Rounded.Wifi,
+                    expanded = transceiversExpanded,
+                    onToggle = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        transceiversExpanded = !transceiversExpanded 
+                    }
+                )
+                AnimatedVisibility(
+                    visible = transceiversExpanded,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "Hardware Channels",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 0.8.sp
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Protocol.values().forEach { protocol ->
+                                val isEnabled = protocolsEnabled[protocol] ?: true
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = protocol.displayName,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        val detail = when (protocol) {
+                                            Protocol.BLE -> "Emits secure BLE advertisement pairing beacons."
+                                            Protocol.NSD -> "Locates mDNS/DNS-SD LAN network sockets."
+                                            Protocol.UDP -> "Transmits high-availability multicast discover pulses."
+                                            Protocol.WIFI_DIRECT -> "Operates high-performance hardware direct-link clusters."
+                                        }
+                                        Text(
+                                            text = detail,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Switch(
+                                        checked = isEnabled,
+                                        onCheckedChange = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            viewModel.toggleProtocol(protocol)
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // == 3. THEME DRESSING CASCADE
         item {
             val currentPrefs by viewModel.themePreference.collectAsState()
-            
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Palette,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "Visual Theme & Dressing",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.primary,
-                            letterSpacing = 0.8.sp
-                        )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                SettingsCascadeHeader(
+                    title = "Visual Theme & Outfits",
+                    icon = Icons.Rounded.Palette,
+                    expanded = themeExpanded,
+                    onToggle = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        themeExpanded = !themeExpanded 
                     }
-
-                    Spacer(Modifier.height(14.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        val themes = listOf(
-                            Triple(0, "System Default (Default Dark Cosmic)", "Matches system config / Falls back to Dark Cosmic"),
-                            Triple(1, "Champagne Light", "A highly polished ivory silver professional layout"),
-                            Triple(2, "Dark Cosmic", "The legendary starry deep obsidian original"),
-                            Triple(3, "Cyberpunk Oasis 🌌", "Glowing neon pink and electric cyan grid stream"),
-                            Triple(4, "Solar OLED", "Pitch-black background optimized for power reduction"),
-                            Triple(5, "Emerald Vault 🌲", "Soothing jade green style inspired by offline safety")
-                        )
-
-                        themes.forEach { (id, name, desc) ->
-                            val isSelected = currentPrefs == id
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        viewModel.setThemePreference(id)
-                                    }
-                                    .border(
-                                        width = if (isSelected) 1.5.dp else 1.dp,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                        shape = MaterialTheme.shapes.small
-                                    )
-                                    .background(
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent,
-                                        shape = MaterialTheme.shapes.small
-                                    )
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        viewModel.setThemePreference(id)
-                                    },
-                                    colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                )
+                AnimatedVisibility(
+                    visible = themeExpanded,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "Visual Clothes Styles",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 0.8.sp
+                            )
+                            Spacer(Modifier.height(14.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                val themes = listOf(
+                                    Triple(2, "Dark Cosmic (Default starry obsidian)", "The legendary zero-energy aesthetic dark theme template"),
+                                    Triple(1, "Champagne Light", "A highly polished ivory silver professional style"),
+                                    Triple(3, "Cyberpunk Oasis 🌌", "Glowing neon pink and electric cyan grid stream"),
+                                    Triple(4, "Solar OLED", "Pitch-black background optimized for power reduction"),
+                                    Triple(5, "Emerald Vault 🌲", "Soothing jade green style inspired by offline safety")
                                 )
-                                Spacer(Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = name,
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = desc,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                themes.forEach { (id, name, desc) ->
+                                    val isSelected = currentPrefs == id
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                viewModel.setThemePreference(id)
+                                            }
+                                            .border(
+                                                width = if (isSelected) 1.5.dp else 1.dp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                                shape = MaterialTheme.shapes.small
+                                            )
+                                            .background(
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent,
+                                                shape = MaterialTheme.shapes.small
+                                            )
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = {
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                viewModel.setThemePreference(id)
+                                            },
+                                            colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = name,
+                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = desc,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1735,96 +1924,134 @@ fun SettingsScreen(
             }
         }
 
-        // SECURITY SWITCHES
+        // == 4. SECURITY CASCADE
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "Pairing Handshake & Privacy",
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.primary,
-                        letterSpacing = 0.8.sp
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-
-                    // Require pairing toggle
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Mandatory PIN pairing", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                            Text("Halts inbound transfers till verified display match confirmed.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = requirePairing,
-                            onCheckedChange = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                viewModel.setRequirePairing(it)
-                            },
-                            colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
-                        )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                SettingsCascadeHeader(
+                    title = "Handshakes & Security",
+                    icon = Icons.Rounded.Security,
+                    expanded = securityExpanded,
+                    onToggle = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        securityExpanded = !securityExpanded 
                     }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
-
-                    // Auto-Accept paired peers toggle
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
+                )
+                AnimatedVisibility(
+                    visible = securityExpanded,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Trust pre-authorized peers", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                            Text("Bypasses pairing displayed alerts entirely for preloaded trusted devices.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "Handshake Protocols",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 0.8.sp
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Mandatory PIN pairing", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                                    Text("Halts inbound transfers till verified display match confirmed.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = requirePairing,
+                                    onCheckedChange = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.setRequirePairing(it)
+                                    },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
+                                )
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Trust pre-authorized peers", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                                    Text("Bypasses pairing displayed alerts entirely for preloaded trusted devices.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = autoAccept,
+                                    onCheckedChange = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.setAutoAccept(it)
+                                    },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
+                                )
+                            }
                         }
-                        Switch(
-                            checked = autoAccept,
-                            onCheckedChange = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                viewModel.setAutoAccept(it)
-                            },
-                            colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
-                        )
                     }
                 }
             }
         }
 
-        // INFO BRAND AREA
+        // == 5. SYSTEM RECOVERY CASCADE
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+            Column(modifier = Modifier.fillMaxWidth()) {
+                SettingsCascadeHeader(
+                    title = "System Recovery & Info",
+                    icon = Icons.Rounded.Settings,
+                    expanded = systemExpanded,
+                    onToggle = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        systemExpanded = !systemExpanded 
+                    }
+                )
+                AnimatedVisibility(
+                    visible = systemExpanded,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
                 ) {
-                    Text("EchoSystem P2P Share", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                    Text("Version 1.0.0 (build 1) • Offline Security Approved", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.resetOnboarding()
-                        },
-                        shape = PillShape,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     ) {
-                        Icon(Icons.Rounded.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Reset Onboarding Flow")
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("EchoSystem P2P Share Suite", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                            Text("Version 1.1.0 • Enhanced Xender-Style P2P", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(16.dp))
+                            Button(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    // Robust restore configurations
+                                    viewModel.setThemePreference(2)
+                                    viewModel.setLocalDeviceName("EchoPeer")
+                                    viewModel.setAutoAccept(false)
+                                    viewModel.setRequirePairing(true)
+                                    android.widget.Toast.makeText(context, "Full App Configurations Restored!", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                shape = PillShape,
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Rounded.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Restore Default App Configs")
+                            }
+                        }
                     }
                 }
             }
