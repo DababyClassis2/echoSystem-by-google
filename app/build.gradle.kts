@@ -135,6 +135,8 @@ dependencies {
   // Security & Data
   implementation(libs.androidx.security.crypto)
   implementation(libs.kotlinx.serialization.json)
+  implementation(libs.zxing.core)
+  implementation(libs.zxing.embedded)
 
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LocalShare Web</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            padding: 24px;
+            background-color: #0f172a;
+            color: #f1f5f9;
+            margin: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .title {
+            font-size: 28px;
+            margin-bottom: 8px;
+            font-weight: 800;
+            background: linear-gradient(to right, #6366f1, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            font-size: 14px;
+            color: #94a3b8;
+            margin-bottom: 24px;
+        }
+        .card {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .file-header {
+            padding: 16px;
+            background-color: #1a2333;
+            border-bottom: 1px solid #334155;
+            font-weight: 600;
+            color: #e2e8f0;
+        }
+        .file {
+            padding: 16px;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .file:last-child {
+            border-bottom: none;
+        }
+        .file-name {
+            font-size: 15px;
+            font-weight: 500;
+            word-break: break-all;
+            padding-right: 12px;
+        }
+        .btn {
+            background-color: #4f46e5;
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background-color 0.2s;
+            display: inline-block;
+        }
+        .btn:hover {
+            background-color: #4338ca;
+        }
+        .empty-state {
+            padding: 32px;
+            text-align: center;
+            color: #64748b;
+            font-size: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title">LocalShare Web Dashboard</div>
+        <div class="subtitle">Direct local network file access node</div>
+        
+        <div class="card">
+            <div class="file-header">Available Downloadable Resource Packages</div>
+            <div id="fileList" class="empty-state">Loading files...</div>
+        </div>
+    </div>
+
+    <script>
+        async function loadFiles() {
+            try {
+                const res = await fetch('/files');
+                const files = await res.json();
+                const container = document.getElementById('fileList');
+                container.innerHTML = '';
+
+                if (files.length === 0) {
+                    container.className = 'empty-state';
+                    container.innerHTML = 'No shared files found. Transfer files to this device to see them here!';
+                    return;
+                }
+
+                container.className = ''; // remove empty-state padding
+                files.forEach(f => {
+                    const div = document.createElement('div');
+                    div.className = 'file';
+                    
+                    const nameDiv = document.createElement('div');
+                    nameDiv.className = 'file-name';
+                    nameDiv.textContent = f;
+                    
+                    const link = document.createElement('a');
+                    link.className = 'btn';
+                    link.href = `/download/${encodeURIComponent(f)}`;
+                    link.textContent = 'Download';
+                    
+                    div.appendChild(nameDiv);
+                    div.appendChild(link);
+                    container.appendChild(div);
+                });
+            } catch (e) {
+                const container = document.getElementById('fileList');
+                container.className = 'empty-state';
+                container.textContent = 'Failed to connect to LocalShare network engine.';
+            }
+        }
+
+        loadFiles();
+    </script>
+</body>
+</html>

@@ -1,6 +1,8 @@
 package com.echosystem.localshare.ui.screens
 
 import android.net.Uri
+import com.echosystem.localshare.web.WebShareViewModel
+import com.echosystem.localshare.web.WebShareScreen
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -48,6 +50,7 @@ import kotlinx.coroutines.launch
 fun MainScreen(viewModel: EchoViewModel = hiltViewModel()) {
     var showOnboarding by remember { mutableStateOf(true) }
     var selectedTab by remember { mutableIntStateOf(0) }
+    val webShareViewModel: WebShareViewModel = hiltViewModel()
 
     if (showOnboarding) {
         OnboardingScreen(onGetStarted = { showOnboarding = false })
@@ -88,10 +91,17 @@ fun MainScreen(viewModel: EchoViewModel = hiltViewModel()) {
                         modifier = Modifier.testTag("tab_history")
                     )
                     NavigationBarItem(
-                        icon = { Icon(Icons.Default.Settings, "Settings") },
-                        label = { Text("Settings", style = MaterialTheme.typography.labelSmall) },
+                        icon = { Icon(Icons.Default.Language, "Web") },
+                        label = { Text("Web", style = MaterialTheme.typography.labelSmall) },
                         selected = selectedTab == 4,
                         onClick = { selectedTab = 4 },
+                        modifier = Modifier.testTag("tab_web_share")
+                    )
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Default.Settings, "Settings") },
+                        label = { Text("Settings", style = MaterialTheme.typography.labelSmall) },
+                        selected = selectedTab == 5,
+                        onClick = { selectedTab = 5 },
                         modifier = Modifier.testTag("tab_settings")
                     )
                 }
@@ -115,7 +125,8 @@ fun MainScreen(viewModel: EchoViewModel = hiltViewModel()) {
                         1 -> SendFileScreen(viewModel)
                         2 -> ReceiveRadarScreen(viewModel)
                         3 -> HistoryLedgerScreen(viewModel)
-                        4 -> SettingsShieldScreen(viewModel)
+                        4 -> WebShareScreen(webShareViewModel)
+                        5 -> SettingsShieldScreen(viewModel)
                     }
                 }
             }
