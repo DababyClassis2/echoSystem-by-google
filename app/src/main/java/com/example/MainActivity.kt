@@ -33,12 +33,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: EchoViewModel = viewModel()
             val themePreference by viewModel.themePreference.collectAsState()
-            val darkTheme = when (themePreference) {
-                2 -> true
-                1 -> false
-                else -> isSystemInDarkTheme()
-            }
-            MyApplicationTheme(darkTheme = darkTheme) {
+            MyApplicationTheme(themeId = themePreference) {
                 MainAppContainer(viewModel = viewModel)
             }
         }

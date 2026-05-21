@@ -393,6 +393,141 @@ fun HomeScreen(
             )
         }
 
+        // MANUAL IP LINKING CARD
+        item {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            var expandManual by remember { mutableStateOf(false) }
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expandManual = !expandManual }
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.AddLink,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Bypass Hotspot / VPN Limits (Direct Link IP)",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Icon(
+                        imageVector = if (expandManual) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                
+                if (expandManual) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = "Connected to PdaNet, a VPN, client-isolated Wi-Fi, or direct proxy? Enter their local IP (e.g., 10.0.0.5 or 192.168.43.1) and port (default 8080) to target them directly.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            
+                            var ipInput by remember { mutableStateOf("") }
+                            var portInput by remember { mutableStateOf("8080") }
+                            var customNameInput by remember { mutableStateOf("") }
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = ipInput,
+                                    onValueChange = { ipInput = it },
+                                    label = { Text("IP Address") },
+                                    placeholder = { Text("192.168.x.x") },
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodyMedium,
+                                    shape = MaterialTheme.shapes.small,
+                                    modifier = Modifier.weight(1.5f),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                )
+                                
+                                OutlinedTextField(
+                                    value = portInput,
+                                    onValueChange = { portInput = it },
+                                    label = { Text("Port") },
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodyMedium,
+                                    shape = MaterialTheme.shapes.small,
+                                    modifier = Modifier.weight(0.7f),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                )
+                            }
+                            
+                            OutlinedTextField(
+                                value = customNameInput,
+                                onValueChange = { customNameInput = it },
+                                label = { Text("Custom Nickname (Optional)") },
+                                placeholder = { Text("Enter custom name") },
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyMedium,
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                )
+                            )
+                            
+                            Button(
+                                onClick = {
+                                    if (ipInput.trim().isNotEmpty()) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.connectDeviceByIp(ipInput, portInput, customNameInput)
+                                        android.widget.Toast.makeText(context, "Direct IP Link added!", android.widget.Toast.LENGTH_SHORT).show()
+                                        ipInput = ""
+                                        customNameInput = ""
+                                        expandManual = false
+                                    }
+                                },
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Icon(Icons.Rounded.Link, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Bind Direct Link")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (devices.isEmpty() && isScanning) {
             items(2) {
                 DeviceCardSkeleton()
@@ -1504,6 +1639,96 @@ fun SettingsScreen(
                                 },
                                 colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
                             )
+                        }
+                    }
+                }
+            }
+        }
+        
+        // VISUAL THEME SELECTION SECTION
+        item {
+            val currentPrefs by viewModel.themePreference.collectAsState()
+            
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Palette,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Visual Theme & Dressing",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = 0.8.sp
+                        )
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        val themes = listOf(
+                            Triple(0, "System Default (Default Dark Cosmic)", "Matches system config / Falls back to Dark Cosmic"),
+                            Triple(1, "Champagne Light", "A highly polished ivory silver professional layout"),
+                            Triple(2, "Dark Cosmic", "The legendary starry deep obsidian original"),
+                            Triple(3, "Cyberpunk Oasis 🌌", "Glowing neon pink and electric cyan grid stream"),
+                            Triple(4, "Solar OLED", "Pitch-black background optimized for power reduction"),
+                            Triple(5, "Emerald Vault 🌲", "Soothing jade green style inspired by offline safety")
+                        )
+
+                        themes.forEach { (id, name, desc) ->
+                            val isSelected = currentPrefs == id
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.setThemePreference(id)
+                                    }
+                                    .border(
+                                        width = if (isSelected) 1.5.dp else 1.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                        shape = MaterialTheme.shapes.small
+                                    )
+                                    .background(
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent,
+                                        shape = MaterialTheme.shapes.small
+                                    )
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.setThemePreference(id)
+                                    },
+                                    colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = name,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = desc,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 }

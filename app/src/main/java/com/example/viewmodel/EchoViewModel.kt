@@ -838,6 +838,28 @@ class EchoViewModel(application: Application) : AndroidViewModel(application) {
         _devicesList.value = filteredReal
     }
 
+    fun connectDeviceByIp(ipAddress: String, portString: String, customName: String = "") {
+        val port = portString.toIntOrNull() ?: 8080
+        val cleanIp = ipAddress.trim()
+        if (cleanIp.isEmpty()) return
+        
+        val deviceId = "manual_${cleanIp}_$port"
+        val resolvedName = if (customName.trim().isNotEmpty()) customName.trim() else "Direct IP ($cleanIp)"
+        
+        val manualDevice = Device(
+            id = deviceId,
+            name = resolvedName,
+            ip = cleanIp,
+            port = port,
+            protocols = listOf("ble", "nsd", "udp", "wifi_direct"),
+            signalStrength = 1.0f,
+            osName = "Manual Connection"
+        )
+        
+        realDiscoveredDevices[deviceId] = manualDevice
+        filterAndPopulateDevices()
+    }
+
     fun initiateSendToDevice(device: Device) {
         val selectedFiles = _allFiles.value.filter { it.id in _selectedFileIds.value }
         if (selectedFiles.isEmpty()) return
