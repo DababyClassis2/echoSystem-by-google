@@ -5,10 +5,12 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.echosystem.localshare.discovery.NsdHelper
+import com.echosystem.localshare.logging.AppLogger
 import com.echosystem.localshare.model.Device
 import com.echosystem.localshare.model.FileTransfer
 import com.echosystem.localshare.model.ServerEvent
 import com.echosystem.localshare.model.TransferStatus
+import com.echosystem.localshare.notification.AppNotificationManager
 import com.echosystem.localshare.repository.DeviceRegistry
 import com.echosystem.localshare.repository.FileRepository
 import com.echosystem.localshare.security.PairingManager
@@ -48,18 +50,25 @@ class EchoViewModel @Inject constructor(
     private val _ipAddress = MutableStateFlow(pairingManager.getLocalIp())
     val ipAddress: StateFlow<String> = _ipAddress.asStateFlow()
 
+    private val _appEventsLog = MutableStateFlow("")
+    val appEventsLog: StateFlow<String> = _appEventsLog.asStateFlow()
+
+    private val _appCrashesLog = MutableStateFlow("")
+    val appCrashesLog: StateFlow<String> = _appCrashesLog.asStateFlow()
+
     init {
         // Automatically generate a default PIN and auto-start network discovery
         generatePairingPin()
         startDiscovery()
         loadReceivedFiles()
+        loadLogs()
 
         // Synchronize with server events for real-time transfers (e.g. from nearby hosts)
         viewModelScope.launch {
             serverEventBus.events.collect { event ->
                 when (event) {
                     is ServerEvent.PairingRequest -> {
-                        // Securely paired or requested
+                        AppLogger.logEvent("EchoViewModel", "Received pairing connection query from client ID: ${event.deviceId}")
                     }
                     is ServerEvent.TransferStarted -> {
                         val incomingTransfer = FileTransfer(
@@ -71,6 +80,7 @@ class EchoViewModel @Inject constructor(
                             remoteDeviceName = "Nearby Host"
                         )
                         _transferProgress.update { it + incomingTransfer }
+                        AppLogger.logEvent("EchoViewModel", "Incoming transmission starting: ${event.fileName} (${event.size} bytes)")
                     }
                     is ServerEvent.TransferProgress -> {
                         updateTransferProgress(event.fileId, event.progress)
@@ -93,9 +103,14 @@ class EchoViewModel @Inject constructor(
                             )
                             _transferProgress.update { it + incomingCompleted }
                         }
+                        AppNotificationManager.notifyFileReceived(context, fileId, "Local Portal Sync")
+                        AppLogger.logEvent("EchoViewModel", "Incoming transfer successfully completed: $fileId")
+                        loadReceivedFiles()
                     }
                     is ServerEvent.TransferFailed -> {
                         updateTransferStatus(event.fileId, TransferStatus.FAILED)
+                        AppNotificationManager.notifyTransferFailed(context, "Incoming transfer session failed: ${event.error}")
+                        AppLogger.logEvent("EchoViewModel", "Incoming transfer failed on ID ${event.fileId}: ${event.error}")
                     }
                 }
             }
@@ -153,6 +168,7 @@ class EchoViewModel @Inject constructor(
             )
             
             _transferProgress.update { it + transfer }
+            AppLogger.logEvent("EchoViewModel", "Starting outgoing transfer of $fileName ($fileSize bytes) to ${device.name}")
 
             try {
                 val inputStream = fileRepository.openInputStream(uri) ?: return@launch
@@ -176,11 +192,17 @@ class EchoViewModel @Inject constructor(
 
                 if (response.status == HttpStatusCode.OK) {
                     updateTransferStatus(transfer.id, TransferStatus.COMPLETED)
+                    AppNotificationManager.notifyFileSent(context, fileName, "Completed")
+                    AppLogger.logEvent("EchoViewModel", "Outgoing transfer successfully completed: $fileName")
                 } else {
                     updateTransferStatus(transfer.id, TransferStatus.FAILED)
+                    AppNotificationManager.notifyTransferFailed(context, "Sending $fileName failed: Status ${response.status}")
+                    AppLogger.logEvent("EchoViewModel", "Outgoing transfer failed for $fileName: Status ${response.status}")
                 }
             } catch (e: Exception) {
                 updateTransferStatus(transfer.id, TransferStatus.FAILED)
+                AppNotificationManager.notifyTransferFailed(context, "Sending $fileName failed: ${e.localizedMessage}")
+                AppLogger.logEvent("EchoViewModel", "Outgoing transfer failed for $fileName with exception: ${e.message}")
             }
         }
     }
@@ -231,6 +253,30 @@ class EchoViewModel @Inject constructor(
                 e.printStackTrace()
             }
         }
+    }
+
+    fun loadLogs() {
+        viewModelScope.launch {
+            _appEventsLog.value = AppLogger.readEventsLog()
+            _appCrashesLog.value = AppLogger.readCrashesLog()
+        }
+    }
+
+    fun clearLogsAndRefresh() {
+        viewModelScope.launch {
+            AppLogger.clearLogs()
+            loadLogs()
+        }
+    }
+
+    fun exportLogsAndRefresh(context: Context) {
+        AppLogger.exportLogs(context)
+        loadLogs()
+    }
+
+    fun addManualLog(tag: String, message: String) {
+        AppLogger.logEvent(tag, message)
+        loadLogs()
     }
 
     private fun updateTransferProgress(id: String, progress: Float) {
