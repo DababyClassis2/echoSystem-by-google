@@ -11,6 +11,7 @@ import com.echosystem.localshare.model.Device
 import com.echosystem.localshare.model.FileTransfer
 import com.echosystem.localshare.model.ServerEvent
 import com.echosystem.localshare.model.TransferStatus
+import com.echosystem.localshare.model.NsdState
 import com.echosystem.localshare.notification.AppNotificationManager
 import com.echosystem.localshare.repository.DeviceRegistry
 import com.echosystem.localshare.repository.FileRepository
@@ -37,7 +38,7 @@ class EchoViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val deviceRegistry: DeviceRegistry,
     private val fileRepository: FileRepository,
-    private val pairingManager: PairingManager,
+    val pairingManager: PairingManager,
     val trustManager: TrustManager,
     private val nsdHelper: NsdHelper,
     private val httpClient: HttpClient,
@@ -46,6 +47,8 @@ class EchoViewModel @Inject constructor(
 ) : ViewModel() {
 
     val devices: StateFlow<List<Device>> = deviceRegistry.deviceList
+    
+    val nsdState: StateFlow<NsdState> = nsdHelper.state
 
     private val _transferProgress = MutableStateFlow<List<FileTransfer>>(emptyList())
     val transferProgress: StateFlow<List<FileTransfer>> = _transferProgress.asStateFlow()

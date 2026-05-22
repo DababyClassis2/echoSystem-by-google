@@ -1,0 +1,12 @@
+{
+  "versionName": "0.2.5",
+  "versionCode": 7,
+  "releaseDate": "2026-05-22",
+  "changes": [
+    "Unified Devices Tab UI",
+    "Animated NSD Health Header",
+    "Device Registry Actions (Rename/Block/Revoke)",
+    "Granular Per-Device Permissions",
+    "Integrated Local Identity Banner"
+  ]
+}

@@ -18,6 +18,8 @@ import androidx.navigation.compose.rememberNavController
 import com.echosystem.localshare.ui.screens.*
 import com.echosystem.localshare.viewmodel.EchoViewModel
 
+import com.echosystem.localshare.ui.screens.devices.DevicesScreen
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: EchoViewModel = hiltViewModel()) {
@@ -115,39 +117,6 @@ private fun ControlMenuItem(
 }
 
 @Composable
-fun DevicesTabScreen(viewModel: EchoViewModel) {
-    var selectedIndex by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Nearby", "Receive")
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        TabRow(
-            selectedTabIndex = selectedIndex,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.primary,
-            indicator = { tabPositions ->
-                TabRowDefaults.SecondaryIndicator(
-                    Modifier.tabIndicatorOffset(tabPositions[selectedIndex]),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedIndex == index,
-                    onClick = { selectedIndex = index },
-                    text = { Text(title, fontWeight = FontWeight.Bold) }
-                )
-            }
-        }
-
-        when (selectedIndex) {
-            0 -> SendFileScreen(viewModel)
-            1 -> ReceiveRadarScreen(viewModel)
-        }
-    }
-}
-
-@Composable
 fun EchoNavHost(
     navController: androidx.navigation.NavHostController,
     viewModel: EchoViewModel,
@@ -160,7 +129,7 @@ fun EchoNavHost(
             navController = navController,
             startDestination = Screen.Devices.route,
         ) {
-            composable(Screen.Devices.route) { DevicesTabScreen(viewModel) }
+            composable(Screen.Devices.route) { DevicesScreen(viewModel) }
             composable(Screen.Files.route) { LocalFileBrowser(viewModel, onClose = { }) }
             composable(Screen.WebShare.route) { WebPortalScreen(viewModel) }
             
