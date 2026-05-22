@@ -1,0 +1,7 @@
+--- EchoCoreService.kt
++++ EchoCoreService.kt
+@@ -61,0 +62,1 @@
++        // Priority: Start foreground immediately to stay alive
+@@ -63,0 +65,2 @@
++        // Isolated Netty start with safety delay
++        nettyScope.launch { delay(200); startKtorServer() }
