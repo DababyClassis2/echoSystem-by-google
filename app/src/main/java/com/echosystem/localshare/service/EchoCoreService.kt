@@ -58,10 +58,8 @@ class EchoCoreService : Service() {
     override fun onCreate() {
         super.onCreate()
         activeInstance = this
-        // CRITICAL: Call startForeground IMMEDIATELY
         startForegroundServiceNotification()
         
-        // Start dependencies on background threads
         startKtorServer()
         startNsdService()
     }
@@ -114,13 +112,12 @@ class EchoCoreService : Service() {
                         json()
                     }
                     install(WebSockets) {
-                        // Max frame configuration for bulk performance uploads
                         maxFrameSize = Long.MAX_VALUE
                     }
                     routing {
                         deviceRoutes(this@EchoCoreService, pairingManager)
-                        fileRoutes(fileRepository, serverEventBus, pairingManager)
-                        pairingRoutes(pairingManager, trustManager)
+                        fileRoutes(this@EchoCoreService, fileRepository, serverEventBus, pairingManager, trustManager)
+                        pairingRoutes(pairingManager, trustManager, serverEventBus)
                         webSocketRoutes(serverEventBus)
                     }
                 }.start(wait = false)
@@ -144,12 +141,8 @@ class EchoCoreService : Service() {
 
     fun restartNetty() {
         val now = System.currentTimeMillis()
-        if (now - lastNettyRestart < 60000) {
-            Log.d("EchoCoreService", "Netty restart ignored: inside 60s cooldown.")
-            return
-        }
+        if (now - lastNettyRestart < 60000) return
         lastNettyRestart = now
-        Log.d("EchoCoreService", "Watchdog triggered Netty-only restart.")
         nettyScope.cancel()
         nettyScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         startKtorServer()
@@ -157,12 +150,8 @@ class EchoCoreService : Service() {
 
     fun restartNsd() {
         val now = System.currentTimeMillis()
-        if (now - lastNsdRestart < 60000) {
-            Log.d("EchoCoreService", "NSD restart ignored: inside 60s cooldown.")
-            return
-        }
+        if (now - lastNsdRestart < 60000) return
         lastNsdRestart = now
-        Log.d("EchoCoreService", "Watchdog triggered NSD-only restart.")
         startNsdService()
     }
 

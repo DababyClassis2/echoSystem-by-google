@@ -52,6 +52,9 @@ class EchoViewModel @Inject constructor(
     private val _pairingPin = MutableStateFlow<String?>(null)
     val pairingPin: StateFlow<String?> = _pairingPin.asStateFlow()
 
+    private val _incomingPairingRequest = MutableStateFlow<ServerEvent.PairingRequest?>(null)
+    val incomingPairingRequest = _incomingPairingRequest.asStateFlow()
+
     private val _ipAddress = MutableStateFlow(pairingManager.getLocalIp())
     val ipAddress: StateFlow<String> = _ipAddress.asStateFlow()
 
@@ -80,6 +83,7 @@ class EchoViewModel @Inject constructor(
             serverEventBus.events.collect { event ->
                 when (event) {
                     is ServerEvent.PairingRequest -> {
+                        _incomingPairingRequest.value = event
                         AppLogger.logEvent("EchoViewModel", "Received pairing connection query from client ID: ${event.deviceId}")
                     }
                     is ServerEvent.TransferStarted -> {
@@ -144,6 +148,35 @@ class EchoViewModel @Inject constructor(
         _pairingPin.value = pairingManager.generatePin()
     }
 
+    fun clearIncomingPairing() {
+        _incomingPairingRequest.value = null
+    }
+
+    fun acceptPairing(event: ServerEvent.PairingRequest) {
+        pairingManager.markAsPaired(event.deviceId)
+        deviceRegistry.updateDevicePairingStatus(event.deviceId, true)
+        deviceRegistry.updateDeviceStatus(event.deviceId, com.echosystem.localshare.model.DeviceStatus.CONNECTED)
+        _incomingPairingRequest.value = null
+        AppLogger.logEvent("EchoViewModel", "Accepted pairing request from ${event.deviceName} (${event.deviceId})")
+    }
+
+    fun rejectPairing(event: ServerEvent.PairingRequest) {
+        pairingManager.revokePairing(event.deviceId)
+        deviceRegistry.updateDevicePairingStatus(event.deviceId, false)
+        deviceRegistry.updateDeviceStatus(event.deviceId, com.echosystem.localshare.model.DeviceStatus.DISCONNECTED)
+        _incomingPairingRequest.value = null
+        AppLogger.logEvent("EchoViewModel", "Rejected pairing request from ${event.deviceName}")
+    }
+
+    fun blockDeviceFromPairing(event: ServerEvent.PairingRequest) {
+        trustManager.setDeviceBlocked(event.deviceId, true)
+        pairingManager.revokePairing(event.deviceId)
+        deviceRegistry.updateDevicePairingStatus(event.deviceId, false)
+        deviceRegistry.updateDeviceStatus(event.deviceId, com.echosystem.localshare.model.DeviceStatus.DISCONNECTED)
+        _incomingPairingRequest.value = null
+        AppLogger.logEvent("EchoViewModel", "BLOCKED companion from pairing: ${event.deviceName} (${event.deviceId})")
+    }
+
     fun pairWithDevice(device: Device, pin: String, onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
             try {
@@ -153,7 +186,7 @@ class EchoViewModel @Inject constructor(
                 )
                 val response: HttpResponse = httpClient.post("http://${device.ip}:${device.port}/pairing/request") {
                     contentType(ContentType.Application.Json)
-                    setBody(com.echosystem.localshare.server.routes.PairingRequest(myDeviceId, pin))
+                    setBody(com.echosystem.localshare.server.routes.PairingRequest(myDeviceId, pin, pairingManager.getDeviceNodeName()))
                 }
                 if (response.status == HttpStatusCode.OK) {
                     pairingManager.markAsPaired(device.id)

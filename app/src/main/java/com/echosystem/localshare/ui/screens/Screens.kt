@@ -124,20 +124,11 @@ fun MainScreen(viewModel: EchoViewModel = hiltViewModel()) {
             },
             bottomBar = { AppBottomNavigationBar(navController = navController) }
         ) { padding ->
-            NavHost(
+            EchoNavHost(
                 navController = navController,
-                startDestination = Screen.Home.route,
+                viewModel = viewModel,
                 modifier = Modifier.padding(padding)
-            ) {
-                composable(Screen.Home.route) { PortalHomeScreen(viewModel) }
-                composable(Screen.Send.route) { SendFileScreen(viewModel) }
-                composable(Screen.Receive.route) { ReceiveRadarScreen(viewModel) }
-                composable(Screen.History.route) { HistoryLedgerScreen(viewModel) }
-                composable(Screen.WebShare.route) { WebShareScreen(webShareViewModel) }
-                composable(Screen.Settings.route) { SettingsScreen(viewModel) }
-                composable(Screen.Developer.route) { DeveloperAuditorScreen(viewModel) }
-                composable(Screen.TrustedDevices.route) { TrustedDevicesScreen(viewModel) }
-            }
+            )
         }
     }
 }
@@ -2467,5 +2458,188 @@ fun TrustedDevicesScreen(viewModel: EchoViewModel) {
                 }
             }
         )
+    }
+}
+
+@Composable
+fun WebPortalScreen(viewModel: EchoViewModel) {
+    val ipAddress by viewModel.ipAddress.collectAsState()
+    val pairingPin by viewModel.pairingPin.collectAsState()
+    val portalUrl = "http://$ipAddress:8080"
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+            modifier = Modifier.size(80.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.Language,
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        Text(
+            "Web Portal Online",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Black
+        )
+        Text(
+            "Share files with any browser on the same network",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(Modifier.height(32.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "Portal Address",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    portalUrl,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                
+                Spacer(Modifier.height(24.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Secure PIN Key", style = MaterialTheme.typography.bodyMedium)
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    ) {
+                        Text(
+                            pairingPin ?: "------",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        InfoItem(
+            icon = Icons.Default.CloudUpload,
+            top = "Direct Browser Upload",
+            sub = "Drag and drop files from your computer directly to this phone."
+        )
+        Spacer(Modifier.height(16.dp))
+        InfoItem(
+            icon = Icons.Default.Devices,
+            top = "Multi-Device Sync",
+            sub = "Supports Windows, Mac, Linux, iOS and Android browsers."
+        )
+    }
+}
+
+@Composable
+private fun InfoItem(icon: androidx.compose.ui.graphics.vector.ImageVector, top: String, sub: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(16.dp))
+        Column {
+            Text(top, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+fun EchoNavHost(
+    navController: androidx.navigation.NavHostController,
+    viewModel: EchoViewModel,
+    modifier: Modifier = Modifier
+) {
+    val incomingPairing by viewModel.incomingPairingRequest.collectAsState()
+
+    Box(modifier = modifier) {
+        androidx.navigation.compose.NavHost(
+            navController = navController,
+            startDestination = Screen.Home.route,
+        ) {
+            composable(Screen.Home.route) { PortalHomeScreen(viewModel) }
+            composable(Screen.Send.route) { SendFileScreen(viewModel) }
+            composable(Screen.Receive.route) { ReceiveRadarScreen(viewModel) }
+            composable(Screen.History.route) { HistoryLedgerScreen(viewModel) }
+            composable(Screen.WebShare.route) { WebPortalScreen(viewModel) }
+            composable(Screen.Settings.route) { SettingsScreen(viewModel) }
+            composable(Screen.Developer.route) { DeveloperAuditorScreen(viewModel) }
+            composable(Screen.TrustedDevices.route) { TrustedDevicesScreen(viewModel) }
+        }
+
+        // Shield Guard: Global Discovery Dialog
+        incomingPairing?.let { request ->
+            AlertDialog(
+                onDismissRequest = { viewModel.clearIncomingPairing() },
+                title = { Text("Shield Guard Discovery", fontWeight = FontWeight.Black) },
+                icon = { Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                text = {
+                    Column {
+                        Text("An external node is attempting to establish a secure link.", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.height(16.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Column(Modifier.padding(16.dp).fillMaxWidth()) {
+                                Text(request.deviceName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text("ID: ${request.deviceId}", style = MaterialTheme.typography.labelSmall)
+                                Text("PIN Token: ${request.pin}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { viewModel.acceptPairing(request) }) {
+                        Text("Open Access")
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = { viewModel.blockDeviceFromPairing(request) }) {
+                            Text("Block Node", color = MaterialTheme.colorScheme.error)
+                        }
+                        TextButton(onClick = { viewModel.rejectPairing(request) }) {
+                            Text("Reject")
+                        }
+                    }
+                }
+            )
+        }
     }
 }
