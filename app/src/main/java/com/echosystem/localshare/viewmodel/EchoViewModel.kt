@@ -2,6 +2,7 @@ package com.echosystem.localshare.viewmodel
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.echosystem.localshare.discovery.NsdHelper
@@ -64,6 +65,9 @@ class EchoViewModel @Inject constructor(
     private val _appCrashesLog = MutableStateFlow("")
     val appCrashesLog: StateFlow<String> = _appCrashesLog.asStateFlow()
 
+    // [V1.0.3] Event Deduplication Logic
+    private val handledEventMap = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     init {
         // Register telemetry providers for System Performance watchdog
         com.echosystem.localshare.logging.PerformanceMonitor.registerSpeedProvider {
@@ -78,58 +82,74 @@ class EchoViewModel @Inject constructor(
         loadReceivedFiles()
         loadLogs()
 
-        // Synchronize with server events for real-time transfers (e.g. from nearby hosts)
+        // [V1.0.3] Central Event Collector with deduplication
         viewModelScope.launch {
             serverEventBus.events.collect { event ->
-                when (event) {
-                    is ServerEvent.PairingRequest -> {
-                        _incomingPairingRequest.value = event
-                        AppLogger.logEvent("EchoViewModel", "Received pairing connection query from client ID: ${event.deviceId}")
+                if (isDuplicate(event)) return@collect
+                processEvent(event)
+            }
+        }
+    }
+
+    private fun isDuplicate(event: ServerEvent): Boolean {
+        val key = when (event) {
+            is ServerEvent.TransferStarted -> "start_${event.fileId}"
+            is ServerEvent.TransferCompleted -> "done_${event.fileId}"
+            is ServerEvent.TransferFailed -> "fail_${event.fileId}"
+            else -> return false
+        }
+        val now = System.currentTimeMillis()
+        val lastTime = handledEventMap[key] ?: 0L
+        if (now - lastTime < 1500) return true // 1.5s window for event cleanup
+        handledEventMap[key] = now
+        return false
+    }
+
+    private fun processEvent(event: ServerEvent) {
+        when (event) {
+            is ServerEvent.PairingRequest -> {
+                _incomingPairingRequest.value = event
+                AppLogger.logEvent("EchoViewModel", "Received pairing connection query from client ID: ${event.deviceId}")
+            }
+            is ServerEvent.TransferStarted -> {
+                _transferProgress.update { current ->
+                    if (current.any { it.id == event.fileId }) return@update current
+                    current + FileTransfer(
+                        id = event.fileId,
+                        fileName = event.fileName,
+                        size = event.size,
+                        status = TransferStatus.ONGOING,
+                        isIncoming = true,
+                        remoteDeviceName = "Nearby Portal"
+                    )
+                }
+                AppLogger.logEvent("EchoViewModel", "Incoming transmission starting: ${event.fileName} (${event.size} bytes)")
+            }
+            is ServerEvent.TransferCompleted -> {
+                _transferProgress.update { current ->
+                    current.map { 
+                        if (it.id == event.fileId || it.fileName == event.fileId) it.copy(status = TransferStatus.COMPLETED, progress = 1f) 
+                        else it 
                     }
-                    is ServerEvent.TransferStarted -> {
-                        val exists = _transferProgress.value.any { it.id == event.fileId || it.fileName == event.fileName }
-                        if (!exists) {
-                            val incomingTransfer = FileTransfer(
-                                id = event.fileId,
-                                fileName = event.fileName,
-                                size = event.size,
-                                status = TransferStatus.ONGOING,
-                                isIncoming = true,
-                                remoteDeviceName = "Nearby Host"
-                            )
-                            _transferProgress.update { it + incomingTransfer }
-                        }
-                        AppLogger.logEvent("EchoViewModel", "Incoming transmission starting: ${event.fileName} (${event.size} bytes)")
-                    }
-                    is ServerEvent.TransferProgress -> {
-                        updateTransferProgress(event.fileId, event.progress)
-                    }
-                    is ServerEvent.TransferCompleted -> {
-                        val fileId = event.fileId
-                        val exists = _transferProgress.value.any { it.id == fileId || it.fileName == fileId }
-                        if (exists) {
-                            updateTransferStatus(fileId, TransferStatus.COMPLETED)
-                            updateTransferProgress(fileId, 1f)
-                        } else {
-                            val incomingCompleted = FileTransfer(
-                                id = fileId,
-                                fileName = fileId,
-                                size = 0L,
-                                progress = 1f,
-                                status = TransferStatus.COMPLETED,
-                                isIncoming = true,
-                                remoteDeviceName = "Nearby Host"
-                            )
-                            _transferProgress.update { it + incomingCompleted }
-                        }
-                        AppNotificationManager.notifyFileReceived(context, fileId, "Local Portal Sync")
-                        AppLogger.logEvent("EchoViewModel", "Incoming transfer successfully completed: $fileId")
-                        loadReceivedFiles()
-                    }
-                    is ServerEvent.TransferFailed -> {
-                        updateTransferStatus(event.fileId, TransferStatus.FAILED)
-                        AppNotificationManager.notifyTransferFailed(context, "Incoming transfer session failed: ${event.error}")
-                        AppLogger.logEvent("EchoViewModel", "Incoming transfer failed on ID ${event.fileId}: ${event.error}")
+                }
+                AppNotificationManager.notifyFileReceived(context, event.fileId, "Local Portal Sync")
+                AppLogger.logEvent("EchoViewModel", "Incoming transfer successfully completed: ${event.fileId}")
+                loadReceivedFiles() 
+            }
+            is ServerEvent.TransferFailed -> {
+                _transferProgress.update { current ->
+                    current.map { if (it.id == event.fileId || it.fileName == event.fileId) it.copy(status = TransferStatus.FAILED) else it }
+                }
+                AppNotificationManager.notifyTransferFailed(context, "Incoming transfer session failed: ${event.error}")
+                AppLogger.logEvent("EchoViewModel", "Incoming transfer failed on ID ${event.fileId}: ${event.error}")
+            }
+            is ServerEvent.TransferProgress -> {
+                // Throttle UI progress updates (max 10 per second per file or significant change)
+                _transferProgress.update { current ->
+                    current.map {
+                        if ((it.id == event.fileId || it.fileName == event.fileId) && Math.abs(it.progress - event.progress) > 0.05f) {
+                            it.copy(progress = event.progress)
+                        } else it
                     }
                 }
             }
@@ -138,9 +158,13 @@ class EchoViewModel @Inject constructor(
 
     fun startDiscovery() {
         viewModelScope.launch {
-            nsdHelper.discoverDevices().collect { candidate ->
-                deviceRegistry.addCandidate(candidate)
-            }
+            // Robust collection from discovery flow
+            nsdHelper.discoverDevices()
+                .onStart { Log.d("EchoViewModel", "Scanning for peers...") }
+                .catch { e -> Log.e("EchoViewModel", "Scan error: ${e.message}") }
+                .collect { candidate ->
+                    deviceRegistry.addCandidate(candidate)
+                }
         }
     }
 
