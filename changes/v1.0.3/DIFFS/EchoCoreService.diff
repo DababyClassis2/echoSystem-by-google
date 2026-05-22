@@ -1,0 +1,7 @@
+--- EchoCoreService.kt (Original)
++++ EchoCoreService.kt (v1.0.3)
+@@ -58,3 +58,3 @@
+     override fun onCreate() {
+-        super.onCreate()
++        startForegroundSafe()
++        super.onCreate()

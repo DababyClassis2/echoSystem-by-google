@@ -1,0 +1,14 @@
+--- original/EchoCoreService.kt
++++ v1.0.2/EchoCoreService.kt
+@@ -58,3 +58,3 @@
+     override fun onCreate() {
++        startForegroundServiceNotification()
+         super.onCreate()
+         activeInstance = this
+-        startForegroundServiceNotification()
+
+@@ -67,1 +67,1 @@
+     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
++        startForegroundServiceNotification()
+         return START_STICKY
+     }

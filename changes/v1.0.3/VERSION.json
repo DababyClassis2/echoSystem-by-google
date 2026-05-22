@@ -1,0 +1,14 @@
+{
+  "version": "1.0.3",
+  "task": "CORE BACKEND RESURRECTION & ENGINE ISOLATION",
+  "timestamp": "2024-05-22T14:00:00Z",
+  "changes": [
+    "Foreground Service Priority: startForeground() is now strictly the first line of execution.",
+    "NSD Rebuild: Integrated MulticastLock and health pulses to prevent discovery deadlocks.",
+    "Netty Isolation: Isolated Netty in its own coroutine scope with an autonomous watchdog.",
+    "Engine Watchdog: Monitors sub-engines (NSD, Netty) and restarts them independently without dropping the service.",
+    "Upload Limit Removal: Removed all memory and size caps (~2GB+ support).",
+    "Event Deduplication: 1.5s window logic in ViewModel to prevent duplicate UI updates.",
+    "Discovery Pipeline: Fixed candidate collection and registry synchronization."
+  ]
+}

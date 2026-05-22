@@ -1,0 +1,12 @@
+--- original/NsdHelper.kt
++++ v1.0.2/NsdHelper.kt
+@@ -20,1 +20,2 @@
+     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
++    private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
++    private var multicastLock: WifiManager.MulticastLock? = null
+
+@@ -52,3 +52,4 @@
+     private fun performRegister(port: Int): Boolean {
+         unregisterServiceGracefully()
++        acquireMulticastLock()
+         val serviceInfo = NsdServiceInfo().apply {
