@@ -1,6 +1,6 @@
 {
-  "name": "LocalShare v0.2.8",
-  "description": "Peer-to-peer secure local file sharing | v0.2.8: Modern Web Dashboard 2.0 with Glassmorphism Theme.",
+  "name": "echoSystem v1.1.0",
+  "description": "Secure peer-to-peer file sharing and mesh networking for Android and Web. v1.1.0: Full system refinement and UI 2.0 alignment.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

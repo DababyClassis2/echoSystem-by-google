@@ -56,6 +56,12 @@ class CoreSystemSupervisor @Inject constructor(
     private var schedulerJob: Job? = null
     private var connectivityJob: Job? = null
 
+    private val _systemStatus = MutableStateFlow("OPTIMAL")
+    val systemStatus: StateFlow<String> = _systemStatus.asStateFlow()
+
+    private val _activeEngines = MutableStateFlow(2) // Mesh + Web Portal
+    val activeEngines: StateFlow<Int> = _activeEngines.asStateFlow()
+
     init {
         AppLogger.logEvent(tag, "Bootstrapping LocalShare System Core Supervisor Engine...")
         setupConnectivityMonitoring()

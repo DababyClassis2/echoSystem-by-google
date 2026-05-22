@@ -30,14 +30,14 @@ fun MainScreen(viewModel: EchoViewModel = hiltViewModel()) {
     var showMenu by remember { mutableStateOf(false) }
 
     if (showOnboarding) {
-        OnboardingScreen(onGetStarted = { showOnboarding = false })
+        OnboardingScreen(onFinish = { showOnboarding = false })
     } else {
         Scaffold(
             topBar = {
                 CenterAlignedTopAppBar(
                     title = {
                         Text(
-                            "LocalShare",
+                            "echoSystem",
                             fontWeight = FontWeight.Black,
                             style = MaterialTheme.typography.titleLarge,
                             fontFamily = FontFamily.SansSerif
@@ -135,9 +135,9 @@ fun EchoNavHost(
             composable(Screen.Files.route) { FilesScreen(viewModel) }
             composable(Screen.WebShare.route) { WebShareScreen() }
             
-            composable(Screen.History.route) { HistoryLedgerScreen(viewModel) }
+            composable(Screen.History.route) { HistoryScreen(viewModel) }
             composable(Screen.Settings.route) { SettingsScreen(viewModel) }
-            composable(Screen.Developer.route) { DeveloperAuditorScreen(viewModel) }
+            composable(Screen.Developer.route) { DeveloperScreen(viewModel, onBack = { navController.popBackStack() }) }
             
             composable(Screen.TrustedDevices.route) { 
                 SecurityManager(viewModel = viewModel, onClose = { navController.popBackStack() }) 
