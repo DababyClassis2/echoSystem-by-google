@@ -1,6 +1,6 @@
 {
-  "name": "LocalShare v0.2.3",
-  "description": "Peer-to-peer secure local file sharing | v0.2.3: Engine Hardening & Security Registry.",
+  "name": "LocalShare v0.2.4",
+  "description": "Peer-to-peer secure local file sharing | v0.2.4: Navigation Architecture 2.0 & UI Polishing.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

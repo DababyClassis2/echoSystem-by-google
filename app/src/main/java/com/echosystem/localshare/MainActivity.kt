@@ -15,7 +15,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.echosystem.localshare.core.CoreSystemSupervisor
 import com.echosystem.localshare.service.EchoCoreService
-import com.echosystem.localshare.ui.screens.MainScreen
+import com.echosystem.localshare.ui.navigation.MainScreen
 import com.echosystem.localshare.ui.theme.EchoSystemTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject

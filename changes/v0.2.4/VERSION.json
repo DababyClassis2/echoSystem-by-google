@@ -1,0 +1,7 @@
+{
+  "version": "0.2.4",
+  "build": 6,
+  "release_date": "2026-05-22",
+  "codename": "Navigation 2.0",
+  "summary": "Major navigation overhaul with Material 3 Scaffold and Control Center."
+}
