@@ -1,0 +1,10 @@
+{
+  "version": "0.2.2",
+  "task": "CRASH FIX – FOREGROUND SERVICE & MULTICAST LOCK",
+  "changes": [
+    "Improved EchoCoreService foreground lifecycle to prevent RemoteServiceException.",
+    "Integrated AppLogger into EchoCoreService for defensive debugging.",
+    "Hardened NsdHelper multicast lock acquisition with permission checks and safe exception handling.",
+    "Ensured NSD discovery continues in degraded mode if multicast lock is unavailable."
+  ]
+}

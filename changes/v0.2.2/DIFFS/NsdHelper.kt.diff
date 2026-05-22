@@ -1,0 +1,89 @@
+--- /app/src/main/java/com/echosystem/localshare/discovery/NsdHelper.kt
++++ /changes/v0.2.2/FILES/NsdHelper.kt
+@@ -1,5 +1,6 @@
+ package com.echosystem.localshare.discovery
+ 
+ import android.content.Context
++import android.content.pm.PackageManager
+ import android.net.nsd.NsdManager
+ import android.net.nsd.NsdServiceInfo
+@@ -36,7 +37,7 @@
+     @Synchronized
+     fun registerService(port: Int) {
+         scope.launch {
+             // Re-acquire lock for each registration attempt
+-            acquireMulticastLock()
++            acquireMulticastLockSafely()
+             
+             var attempt = 1
+             while (attempt <= 5) {
+@@ -111,7 +112,7 @@
+     fun discoverDevices(): Flow<DeviceCandidate> = callbackFlow {
+-        acquireMulticastLock()
++        acquireMulticastLockSafely()
+         
+         val discoveryListener = object : NsdManager.DiscoveryListener {
+             override fun onDiscoveryStarted(regType: String) {
+@@ -148,7 +149,7 @@
+             } catch (e: Exception) { }
+-            releaseMulticastLock()
++            releaseMulticastLockSafely()
+         }
+     }
+ 
+@@ -172,19 +173,39 @@
+-    private fun acquireMulticastLock() {
+-        if (multicastLock == null) {
+-            multicastLock = wifiManager.createMulticastLock("EchoShareNSD").apply {
+-                setReferenceCounted(true)
+-                acquire()
++    private fun acquireMulticastLockSafely() {
++        try {
++            // Check for permission first
++            val hasPermission = context.checkCallingOrSelfPermission(android.Manifest.permission.CHANGE_WIFI_MULTICAST_STATE) == PackageManager.PERMISSION_GRANTED
++            if (!hasPermission) {
++                Log.w("NSD_WATCHDOG", "Permission CHANGE_WIFI_MULTICAST_STATE missing. Discovery may be degraded.")
++                return
+             }
+-            Log.d("NsdHelper", "Multicast Lock Acquired")
++
++            if (multicastLock == null) {
++                multicastLock = wifiManager.createMulticastLock("EchoShareNSD").apply {
++                    setReferenceCounted(true)
++                    try {
++                        acquire()
++                        Log.d("NsdHelper", "Multicast Lock Acquired")
++                    } catch (e: SecurityException) {
++                        Log.w("NSD_WATCHDOG", "SecurityException during multicast lock acquire: ${e.message}")
++                    }
++                }
++            }
++        } catch (e: Exception) {
++            Log.e("NSD_WATCHDOG", "Failed to setup multicast lock: ${e.message}")
+         }
+     }
+ 
+-    private fun releaseMulticastLock() {
+-        multicastLock?.let {
+-            if (it.isHeld) it.release()
++    private fun releaseMulticastLockSafely() {
++        try {
++            multicastLock?.let {
++                if (it.isHeld) {
++                    it.release()
++                    Log.d("NsdHelper", "Multicast Lock Released")
++                }
++            }
++        } catch (e: Exception) {
++            Log.e("NSD_WATCHDOG", "Error releasing multicast lock: ${e.message}")
++        } finally {
++            multicastLock = null
+         }
+-        multicastLock = null
+-        Log.d("NsdHelper", "Multicast Lock Released")
+     }
++
++    // Deprecated legacy callers
++    private fun acquireMulticastLock() = acquireMulticastLockSafely()
++    private fun releaseMulticastLock() = releaseMulticastLockSafely()
+ }

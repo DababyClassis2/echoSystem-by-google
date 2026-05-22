@@ -1,0 +1,107 @@
+--- /app/src/main/java/com/echosystem/localshare/service/EchoCoreService.kt
++++ /changes/v0.2.2/FILES/EchoCoreService.kt
+@@ -10,6 +10,7 @@
+ import android.os.IBinder
+ import android.util.Log
+ import androidx.core.app.NotificationCompat
+ import com.echosystem.localshare.discovery.NsdHelper
++import com.echosystem.localshare.logging.AppLogger
+ import com.echosystem.localshare.repository.FileRepository
+@@ -57,17 +58,22 @@
+         private var activeInstance: EchoCoreService? = null
+         fun getInstance(): EchoCoreService? = activeInstance
+         private const val NOTIFICATION_ID = 42
++        private const val TAG = "EchoCoreService"
+     }
+ 
+     override fun onCreate() {
+-        // [V1.0.3 CRITICAL] FIRST LINE ALWAYS
++        Log.i(TAG, "onCreate: Initializing EchoCoreService")
++        AppLogger.logEvent(TAG, "onCreate: Service starting stage 1")
++        
++        // [V1.0.3 CRITICAL] FIRST LINE ALWAYS - Bulletproof foreground entry
+         startForegroundSafe()
+         
+         super.onCreate()
+         activeInstance = this
+-        Log.i("EchoCoreService", "Service instantiated and entered foreground.")
++        Log.i(TAG, "Service instantiated and entered foreground successfully.")
++        AppLogger.logEvent(TAG, "Service online and in foreground.")
+         
+         // Start sub-engines in their own protected bubbles
+@@ -75,6 +81,8 @@
+     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
++        Log.i(TAG, "onStartCommand: Received intent (flags: $flags, startId: $startId)")
++        
+         // [V1.0.3 CRITICAL] RE-CONFIRM FOREGROUND ON RESTART
++        // This prevents the "did not call startForeground" crash if the system restarts the service
+         startForegroundSafe()
+@@ -106,10 +115,13 @@
+         try {
+             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
++                // Using FOREGROUND_SERVICE_TYPE_DATA_SYNC for local file transfer operations
+                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+             } else {
+                 startForeground(NOTIFICATION_ID, notification)
+             }
+-            Log.i("EchoCoreService", "successfully called startForeground")
++            Log.d(TAG, "Successfully invoked startForeground()")
+         } catch (e: Exception) {
+-            Log.e("EchoCoreService", "FATAL: Could not entry foreground: ${e.message}")
++            val errorMsg = "CRITICAL: Could not enter foreground state: ${e.message}"
++            Log.e(TAG, errorMsg)
++            AppLogger.logEvent(TAG, errorMsg)
++            // Note: If this fails, the system will likely terminate the process with a RemoteServiceException
+         }
+@@ -131,12 +143,14 @@
+                 if (now - lastNettyPulse > 45000 && lastNettyPulse > 0) {
+                     Log.w("Watchdog", "Netty Pulse lost. Reviving server...")
++                    AppLogger.logEvent("Watchdog", "Netty Pulse lost. Reviving server...")
+                     engineScope.launch { restartNettyServer() }
+                 }
+ 
+                 // Watchdog for NSD
+                 if (now - lastNsdPulse > 60000 && lastNsdPulse > 0) {
+                     Log.w("Watchdog", "NSD Discovery stalled. Resetting discovery stack...")
++                    AppLogger.logEvent("Watchdog", "NSD Discovery stalled. Reseting discovery stack...")
+                     discoveryScope.launch { restartDiscoveryServer() }
+                 }
+@@ -181,9 +195,11 @@
+             
+             lastNettyPulse = System.currentTimeMillis()
+-            Log.i("EchoCoreService", "Netty Engine Restarted on 8080")
++            Log.i(TAG, "Netty Engine Restarted on 8080")
++            AppLogger.logEvent(TAG, "Netty Engine Restarted on 8080")
+         } catch (e: Exception) {
+-            Log.e("EchoCoreService", "Netty Ignition Failed: ${e.message}")
++            val errorMsg = "Netty Ignition Failed: ${e.message}"
++            Log.e(TAG, errorMsg)
++            AppLogger.logEvent(TAG, errorMsg)
+         } finally {
+             restartMutex.unlock()
+@@ -196,9 +212,11 @@
+             nsdHelper.registerService(8080)
+             lastNsdPulse = System.currentTimeMillis()
+-            Log.i("EchoCoreService", "NSD Discovery Stack Re-initialized")
++            Log.i(TAG, "NSD Discovery Stack Re-initialized")
++            AppLogger.logEvent(TAG, "NSD Discovery Stack Re-initialized")
+         } catch (e: Exception) {
+-            Log.e("EchoCoreService", "NSD Ignition Failed: ${e.message}")
++            val errorMsg = "NSD Ignition Failed: ${e.message}"
++            Log.e(TAG, errorMsg)
++            AppLogger.logEvent(TAG, errorMsg)
+         } finally {
+             restartMutex.unlock()
+@@ -211,6 +229,8 @@
+     override fun onDestroy() {
++        Log.i(TAG, "onDestroy: Service shutting down")
++        AppLogger.logEvent(TAG, "onDestroy: Service shutting down")
+         isShuttingDown = true
+         activeInstance = null
+         try {
+             server?.stop(500, 1000)
+-        } catch (e: Exception) {
+-            Log.e("EchoCoreService", "Error stopping Netty on termination: ${e.message}")
++        } catch (e: Exception) {
++            Log.e(TAG, "Error stopping Netty on termination: ${e.message}")
+         }

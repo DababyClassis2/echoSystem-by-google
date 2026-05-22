@@ -82,3 +82,8 @@ data class TrustedDevice(
     val lastSeen: Long,
     val permissions: Set<DevicePermission> = emptySet()
 )
+
+@Serializable
+enum class NsdState {
+    IDLE, DISCOVERING, REGISTERED, ERROR_DEGRADED, OFFLINE
+}

@@ -1,0 +1,12 @@
+{
+  "version": "0.2.3",
+  "task": "HARDENING & PERMISSION MODEL FINALIZATION",
+  "changes": [
+    "EchoCoreService: Secured foreground lifecycle to prevent RemoteServiceException.",
+    "NsdHelper: Fully hardened multicast lock with permission/exception guards and state machine.",
+    "Watchdogs: Bounded recovery logic for NSD/Netty to prevent log spam.",
+    "Web Portal: Added Security Registry for renaming, blocking, and permission management for privileged peers.",
+    "Permissions: Server-side enforcement for all web portal file actions.",
+    "Stability: Isolated engine scopes and health-check based recovery."
+  ]
+}

@@ -1,0 +1,136 @@
+--- /app/src/main/java/com/echosystem/localshare/discovery/NsdHelper.kt
++++ /changes/v0.2.3/FILES/NsdHelper.kt
+@@ -11,8 +11,10 @@
+ import kotlinx.coroutines.*
+ import kotlinx.coroutines.channels.awaitClose
+ import kotlinx.coroutines.flow.Flow
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.asStateFlow
+ import kotlinx.coroutines.flow.callbackFlow
+ import java.util.concurrent.atomic.AtomicBoolean
+ import javax.inject.Inject
+@@ -34,10 +36,19 @@
+     private val isRegistered = AtomicBoolean(false)
+ 
++    private val _state = MutableStateFlow(NsdState.IDLE)
++    val state = _state.asStateFlow()
++
++    private var retryCount = 0
++    private val MAX_RETRIES = 5
++
+     @Synchronized
+     fun registerService(port: Int) {
++        if (_state.value == NsdState.REGISTERED) return
+         scope.launch {
+-            acquireMulticastLock()
+-            
+-            var attempt = 1
+-            while (attempt <= 5) {
++            _state.value = NsdState.IDLE
++            acquireMulticastLockSafely()
++            
++            retryCount = 0
++            while (retryCount < MAX_RETRIES) {
+                 if (isRegistered.get()) break
+                 
+                 if (performRegistration(port)) {
+                     EchoCoreService.getInstance()?.updatePulse("nsd")
+                     break
+                 }
+                 
+-                Log.e("NsdHelper", "Reg attempt $attempt failed. Backing off...")
+-                delay(2000L * attempt)
+-                attempt++
++                retryCount++
++                val delayTime = 2000L * retryCount
++                Log.w("NsdHelper", "Reg attempt $retryCount failed. Retrying in ${delayTime}ms...")
++                delay(delayTime)
+             }
++            
++            if (!isRegistered.get()) {
++                Log.e("NsdHelper", "NSD Registration failed after $MAX_RETRIES attempts. Entering OFFLINE mode.")
++                _state.value = NsdState.OFFLINE
++            }
+         }
+     }
+@@ -111,8 +124,9 @@
+-    fun discoverDevices(): Flow<DeviceCandidate> = callbackFlow {
+-        acquireMulticastLock()
++    fun discoverDevices(): Flow<DeviceCandidate> = callbackFlow {
++        _state.value = if (_state.value == NsdState.REGISTERED) NsdState.REGISTERED else NsdState.DISCOVERING
++        acquireMulticastLockSafely()
+         
+         val discoveryListener = object : NsdManager.DiscoveryListener {
+             override fun onDiscoveryStarted(regType: String) {
+@@ -134,8 +148,9 @@
++                Log.e("NsdHelper", "Discovery Start Fail: $err")
++                _state.value = NsdState.OFFLINE
+             }
+             override fun onStopDiscoveryFailed(st: String, err: Int) {}
+         }
+@@ -148,1 +163,1 @@
+-            releaseMulticastLock()
++            releaseMulticastLockSafely()
+         }
+     }
+@@ -173,18 +188,38 @@
+-    private fun acquireMulticastLock() {
+-        if (multicastLock == null) {
+-            multicastLock = wifiManager.createMulticastLock("EchoShareNSD").apply {
+-                setReferenceCounted(true)
+-                acquire()
+-            }
+-            Log.d("NsdHelper", "Multicast Lock Acquired")
+-        }
+-    }
+-
+-    private fun releaseMulticastLock() {
+-        multicastLock?.let {
+-            if (it.isHeld) it.release()
+-        }
+-        multicastLock = null
+-        Log.d("NsdHelper", "Multicast Lock Released")
+-    }
++    private fun acquireMulticastLockSafely() {
++        try {
++            val hasPermission = context.checkCallingOrSelfPermission(android.Manifest.permission.CHANGE_WIFI_MULTICAST_STATE) == PackageManager.PERMISSION_GRANTED
++            if (!hasPermission) {
++                if (_state.value != NsdState.ERROR_DEGRADED) {
++                    Log.w("NsdHelper", "CHANGE_WIFI_MULTICAST_STATE permission missing. Discovery may be slow on some routers.")
++                    _state.value = NsdState.ERROR_DEGRADED
++                }
++                return
++            }
++
++            if (multicastLock == null) {
++                multicastLock = wifiManager.createMulticastLock("EchoShareNSD").apply {
++                    setReferenceCounted(true)
++                    try {
++                        acquire()
++                        Log.d("NsdHelper", "Multicast Lock Acquired")
++                    } catch (e: SecurityException) {
++                        Log.w("NsdHelper", "SecurityException during lock acquisition: ${e.message}")
++                        _state.value = NsdState.ERROR_DEGRADED
++                    }
++                }
++            }
++        } catch (e: Exception) {
++            Log.e("NsdHelper", "Multicast Lock setup failed: ${e.message}")
++            _state.value = NsdState.ERROR_DEGRADED
++        }
++    }
++
++    private fun releaseMulticastLockSafely() {
++        try {
++            multicastLock?.let {
++                if (it.isHeld) {
++                    it.release()
++                    Log.d("NsdHelper", "Multicast Lock Released")
++                }
++            }
++        } catch (e: Exception) {
++            Log.e("NsdHelper", "Error releasing lock: ${e.message}")
++        } finally {
++            multicastLock = null
++        }
++    }

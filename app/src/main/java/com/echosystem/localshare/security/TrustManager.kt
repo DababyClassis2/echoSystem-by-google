@@ -66,7 +66,7 @@ class TrustManager @Inject constructor(
             val perms = permString.split(",")
                 .filter { it.isNotEmpty() }
                 .mapNotNull { 
-                    runCatching { com.echosystem.localshare.model.DevicePermission.valueOf(it) }.getOrNull() 
+                    runCatching { DevicePermission.valueOf(it) }.getOrNull() 
                 }.toSet()
             
             TrustedDevice(deviceId, name, fingerprint, note, blocked, lastSeen, perms)
@@ -115,30 +115,36 @@ class TrustManager @Inject constructor(
         prefs.edit().putString("note_$deviceId", note).apply()
         loadTrustedDevices()
     }
+    
+    @Synchronized
+    fun renameDevice(deviceId: String, newName: String) {
+        prefs.edit().putString("name_$deviceId", newName).apply()
+        loadTrustedDevices()
+    }
 
     fun getFingerprint(deviceId: String): String? {
         return prefs.getString("fingerprint_$deviceId", null)
     }
 
     @Synchronized
-    fun setDevicePermissions(deviceId: String, permissions: Set<com.echosystem.localshare.model.DevicePermission>) {
+    fun setDevicePermissions(deviceId: String, permissions: Set<DevicePermission>) {
         val permString = permissions.joinToString(",") { it.name }
         prefs.edit().putString("perms_$deviceId", permString).apply()
         loadTrustedDevices()
     }
 
-    fun hasPermission(deviceId: String, permission: com.echosystem.localshare.model.DevicePermission): Boolean {
+    fun hasPermission(deviceId: String, permission: DevicePermission): Boolean {
         if (isDeviceBlocked(deviceId)) return false
         val perms = getPermissions(deviceId)
-        return perms.contains(permission) || perms.contains(com.echosystem.localshare.model.DevicePermission.MANAGE_PERMISSIONS)
+        return perms.contains(permission) || perms.contains(DevicePermission.MANAGE_PERMISSIONS)
     }
 
-    fun getPermissions(deviceId: String): Set<com.echosystem.localshare.model.DevicePermission> {
+    fun getPermissions(deviceId: String): Set<DevicePermission> {
         val permString = prefs.getString("perms_$deviceId", "") ?: ""
         return permString.split(",")
             .filter { it.isNotEmpty() }
             .mapNotNull { 
-                runCatching { com.echosystem.localshare.model.DevicePermission.valueOf(it) }.getOrNull() 
+                runCatching { DevicePermission.valueOf(it) }.getOrNull() 
             }.toSet()
     }
 
@@ -149,4 +155,3 @@ class TrustManager @Inject constructor(
         return bytes.joinToString("") { String.format("%02x", it) }
     }
 }
-

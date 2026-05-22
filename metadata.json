@@ -1,6 +1,6 @@
 {
-  "name": "LocalShare",
-  "description": "Peer-to-peer secure local file sharing for Android devices on the same network.",
+  "name": "LocalShare v0.2.3",
+  "description": "Peer-to-peer secure local file sharing | v0.2.3: Engine Hardening & Security Registry.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
