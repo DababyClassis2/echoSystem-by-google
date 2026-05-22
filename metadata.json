@@ -1,6 +1,6 @@
 {
-  "name": "LocalShare v0.2.6",
-  "description": "Peer-to-peer secure local file sharing | v0.2.6: Integrated File Grid & Transfer Analytics.",
+  "name": "LocalShare v0.2.7",
+  "description": "Peer-to-peer secure local file sharing | v0.2.7: Dynamic WebShare UI & Session Management.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

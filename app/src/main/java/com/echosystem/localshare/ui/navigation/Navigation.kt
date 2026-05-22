@@ -20,6 +20,7 @@ import com.echosystem.localshare.viewmodel.EchoViewModel
 
 import com.echosystem.localshare.ui.screens.devices.DevicesScreen
 import com.echosystem.localshare.ui.screens.files.FilesScreen
+import com.echosystem.localshare.ui.screens.webshare.WebShareScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,7 +133,7 @@ fun EchoNavHost(
         ) {
             composable(Screen.Devices.route) { DevicesScreen(viewModel) }
             composable(Screen.Files.route) { FilesScreen(viewModel) }
-            composable(Screen.WebShare.route) { WebPortalScreen(viewModel) }
+            composable(Screen.WebShare.route) { WebShareScreen() }
             
             composable(Screen.History.route) { HistoryLedgerScreen(viewModel) }
             composable(Screen.Settings.route) { SettingsScreen(viewModel) }

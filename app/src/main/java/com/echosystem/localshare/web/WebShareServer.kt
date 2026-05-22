@@ -7,6 +7,7 @@ import io.ktor.http.content.*
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -25,6 +26,12 @@ class WebShareServer(private val context: Context) {
     private var serverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val activeSessions = Collections.synchronizedSet(mutableSetOf<DefaultWebSocketServerSession>())
+
+    fun getActiveSessionIps(): List<String> {
+        return activeSessions.mapNotNull { session ->
+            session.call.request.origin.remoteHost
+        }.distinct()
+    }
 
     fun start() {
         if (server != null) return
