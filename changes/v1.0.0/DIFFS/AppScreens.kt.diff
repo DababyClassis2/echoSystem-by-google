@@ -1,0 +1,5 @@
+--- /app/src/main/java/com/echosystem/localshare/ui/navigation/AppScreens.kt
++++ /changes/v1.0.0/FILES/app/src/main/java/com/echosystem/localshare/ui/navigation/AppScreens.kt
+@@ -10,1 +10,1 @@
+-    object WebShare : Screen("webshare", "Web", Icons.Filled.Language, Icons.Outlined.Language)
++    object WebShare : Screen("webshare", "WebShare", Icons.Filled.Language, Icons.Outlined.Language)

@@ -11,6 +11,15 @@ import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
+data class TrustedDevice(
+    val id: String,
+    val name: String,
+    val fingerprint: String,
+    val note: String,
+    val blocked: Boolean,
+    val lastSeen: Long
+)
+
 @Singleton
 class TrustManager @Inject constructor(
     @ApplicationContext private val context: Context
@@ -30,30 +39,79 @@ class TrustManager @Inject constructor(
     private val _trustedDeviceIds = MutableStateFlow<Set<String>>(emptySet())
     val trustedDeviceIds = _trustedDeviceIds.asStateFlow()
 
+    private val _trustedDevices = MutableStateFlow<List<TrustedDevice>>(emptyList())
+    val trustedDevices = _trustedDevices.asStateFlow()
+
     init {
         loadTrustedDevices()
     }
 
-    private fun loadTrustedDevices() {
+    @Synchronized
+    fun loadTrustedDevices() {
         val keys = prefs.all.keys
         val trustedIds = keys.filter { it.startsWith("trusted_") && prefs.getBoolean(it, false) }
             .map { it.removePrefix("trusted_") }
             .toSet()
         _trustedDeviceIds.value = trustedIds
+
+        // Map all known devices in the prefs
+        val allDeviceIds = keys.filter { it.startsWith("name_") }
+            .map { it.removePrefix("name_") }
+            .distinct()
+
+        val list = allDeviceIds.map { deviceId ->
+            val name = prefs.getString("name_$deviceId", "Unknown Device") ?: "Unknown Device"
+            var fingerprint = prefs.getString("fingerprint_$deviceId", "") ?: ""
+            if (fingerprint.isEmpty()) {
+                fingerprint = generateFingerprint(deviceId, name)
+            }
+            val note = prefs.getString("note_$deviceId", "") ?: ""
+            val blocked = prefs.getBoolean("blocked_$deviceId", false)
+            val lastSeen = prefs.getLong("last_seen_$deviceId", System.currentTimeMillis())
+            TrustedDevice(deviceId, name, fingerprint, note, blocked, lastSeen)
+        }
+        _trustedDevices.value = list
     }
 
     fun isDeviceTrusted(deviceId: String): Boolean {
+        if (isDeviceBlocked(deviceId)) return false
         return prefs.getBoolean("trusted_$deviceId", false)
     }
 
+    fun isDeviceBlocked(deviceId: String): Boolean {
+        return prefs.getBoolean("blocked_$deviceId", false)
+    }
+
+    @Synchronized
     fun setDeviceTrust(deviceId: String, deviceName: String, trust: Boolean) {
-        prefs.edit().putBoolean("trusted_$deviceId", trust).apply()
-        if (trust) {
-            val fingerprint = generateFingerprint(deviceId, deviceName)
-            prefs.edit().putString("fingerprint_$deviceId", fingerprint).apply()
-        } else {
-            prefs.edit().remove("fingerprint_$deviceId").apply()
-        }
+        prefs.edit().apply {
+            putBoolean("trusted_$deviceId", trust)
+            putString("name_$deviceId", deviceName)
+            if (trust) {
+                val fingerprint = generateFingerprint(deviceId, deviceName)
+                putString("fingerprint_$deviceId", fingerprint)
+                putLong("last_seen_$deviceId", System.currentTimeMillis())
+            } else {
+                remove("fingerprint_$deviceId")
+            }
+        }.apply()
+        loadTrustedDevices()
+    }
+
+    @Synchronized
+    fun setDeviceBlocked(deviceId: String, blocked: Boolean) {
+        prefs.edit().apply {
+            putBoolean("blocked_$deviceId", blocked)
+            if (blocked) {
+                putBoolean("trusted_$deviceId", false) // Blocked removes trust
+            }
+        }.apply()
+        loadTrustedDevices()
+    }
+
+    @Synchronized
+    fun setDeviceNote(deviceId: String, note: String) {
+        prefs.edit().putString("note_$deviceId", note).apply()
         loadTrustedDevices()
     }
 
@@ -68,3 +126,4 @@ class TrustManager @Inject constructor(
         return bytes.joinToString("") { String.format("%02x", it) }
     }
 }
+

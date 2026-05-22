@@ -1,0 +1,30 @@
+--- app/src/main/java/com/echosystem/localshare/server/routes/FileRoutes.kt
++++ app/src/main/java/com/echosystem/localshare/server/routes/FileRoutes.kt
+@@ -4,4 +4,5 @@
+ import com.echosystem.localshare.repository.FileRepository
+ import com.echosystem.localshare.security.PairingManager
++import com.echosystem.localshare.security.TrustManager
+ import com.echosystem.localshare.server.ServerEventBus
+ import io.ktor.http.*
+@@ -23,10 +24,11 @@
+ fun Route.fileRoutes(
+     fileRepository: FileRepository,
+     serverEventBus: ServerEventBus,
+-    pairingManager: PairingManager
++    pairingManager: PairingManager,
++    trustManager: TrustManager
+ ) {
+     // Serve list of local files with network-level safety checks
+     get("/web/files") {
+         val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
+         val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
++
++        if (trustManager.isDeviceBlocked(deviceId)) {
++            call.respond(HttpStatusCode.Forbidden, "This companion has been blocked by host controller.")
++            return@get
++        }
++
+         if (!pairingManager.verifyPin(pin) && !pairingManager.isPaired(deviceId)) {
+-             call.respond(HttpStatusCode.Unauthorized, "Pairing authentication required")
+-             return@get
+-         }

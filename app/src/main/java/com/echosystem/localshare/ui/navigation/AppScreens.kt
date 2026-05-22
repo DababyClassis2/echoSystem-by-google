@@ -13,14 +13,13 @@ sealed class Screen(val route: String, val title: String, val filledIcon: ImageV
     object WebShare : Screen("webshare", "Web", Icons.Filled.Language, Icons.Outlined.Language)
     object Settings : Screen("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
     object Developer : Screen("developer", "Developer", Icons.Filled.DeveloperMode, Icons.Outlined.DeveloperMode)
+    object TrustedDevices : Screen("trusted_devices", "Trusted Devices", Icons.Filled.Security, Icons.Outlined.Security)
 }
 
 val bottomTabItems = listOf(
     Screen.Home,
     Screen.Send,
     Screen.Receive,
-    Screen.History,
-    Screen.WebShare,
-    Screen.Settings,
-    Screen.Developer
+    Screen.WebShare
 )
+

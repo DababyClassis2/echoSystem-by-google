@@ -173,6 +173,14 @@
                         <span id="connStatusText">Active Node Gateway</span>
                     </div>
 
+                    <span id="activeClientsText" class="hidden lg:inline bg-slate-800 text-slate-400 px-2.5 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-wider">Loading Peers...</span>
+
+                    <!-- Refresh action button -->
+                    <button onclick="refreshExplorer()" class="text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-705 border border-slate-700/50 p-2 rounded-xl text-xs font-bold transition duration-150 flex items-center space-x-1.5" title="Refresh list">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline">Refresh</span>
+                    </button>
+
                     <!-- Mode actions -->
                     <button onclick="triggerFolderCreation()" class="text-indigo-400 hover:text-indigo-300 bg-indigo-500/5 hover:bg-indigo-500/10 border border-indigo-500/10 hover:border-indigo-500/20 p-2 rounded-xl text-xs font-bold transition duration-150 flex items-center space-x-2">
                         <i data-lucide="folder-plus" class="w-4 h-4"></i>
@@ -374,7 +382,7 @@
                 }
             };
 
-            wsConnection.onmessage = (event) => {
+             wsConnection.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
                     if (data.type === 'refresh') {
@@ -384,7 +392,11 @@
                     } else if (data.type === 'status') {
                         const connText = document.getElementById('connStatusText');
                         if (connText) {
-                            connText.textContent = `${data.device} • ${data.activeClients} Node(s)`;
+                            connText.textContent = `Attached: ${data.device}`;
+                        }
+                        const clientsText = document.getElementById('activeClientsText');
+                        if (clientsText) {
+                            clientsText.textContent = `${data.activeClients} active browser(s)`;
                         }
                     }
                 } catch (e) {
@@ -396,6 +408,8 @@
                 console.warn('Sync stream discontinued. Connecting fallback polling sync...');
                 const connText = document.getElementById('connStatusText');
                 if (connText) connText.textContent = "Offline — Reconnecting...";
+                const clientsText = document.getElementById('activeClientsText');
+                if (clientsText) clientsText.textContent = "Offline";
                 const dot = document.querySelector('#connStatusText')?.previousElementSibling;
                 if (dot) {
                     dot.className = "w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse";

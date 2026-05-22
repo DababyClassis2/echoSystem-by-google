@@ -228,6 +228,76 @@ class EchoViewModel @Inject constructor(
         }
     }
 
+    fun sendMultipleFilesToDevice(device: Device, uris: List<Uri>) {
+        viewModelScope.launch {
+            uris.forEach { uri ->
+                val fileName = fileRepository.getFileName(uri) ?: "unknown_file"
+                val fileSize = fileRepository.getFileSize(uri)
+                
+                val transfer = FileTransfer(
+                    id = System.currentTimeMillis().toString() + "_" + (1000..9999).random(),
+                    fileName = fileName,
+                    size = fileSize,
+                    status = TransferStatus.ONGOING,
+                    isIncoming = false,
+                    remoteDeviceName = device.name
+                )
+                
+                _transferProgress.update { it + transfer }
+                
+                try {
+                    val inputStream = fileRepository.openInputStream(uri)
+                    if (inputStream == null) {
+                        updateTransferStatus(transfer.id, TransferStatus.FAILED)
+                        return@forEach
+                    }
+                    
+                    val response: HttpResponse = coreSystemSupervisor.runWithAutoRetry(device) { resolvedIp ->
+                        httpClient.post("http://$resolvedIp:${device.port}/transfer/upload") {
+                            setBody(MultiPartFormDataContent(
+                                formData {
+                                    append("file", inputStream.readBytes(), Headers.build {
+                                        append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
+                                    })
+                                }
+                            ))
+                            onUpload { bytesSentTotal, contentLength ->
+                                val progressValue = if (contentLength != null && contentLength > 0L) {
+                                    bytesSentTotal.toFloat() / contentLength
+                                } else {
+                                    0f
+                                }
+                                updateTransferProgress(transfer.id, progressValue)
+                            }
+                        }
+                    }
+
+                    if (response.status == HttpStatusCode.OK) {
+                        updateTransferStatus(transfer.id, TransferStatus.COMPLETED)
+                        AppNotificationManager.notifyFileSent(context, fileName, "Completed")
+                        AppLogger.logEvent("EchoViewModel", "Outgoing transfer successfully completed: $fileName")
+                    } else {
+                        updateTransferStatus(transfer.id, TransferStatus.FAILED)
+                        AppNotificationManager.notifyTransferFailed(context, "Sending $fileName failed: Status ${response.status}")
+                        AppLogger.logEvent("EchoViewModel", "Outgoing transfer failed for $fileName: Status ${response.status}")
+                    }
+                } catch (e: Exception) {
+                    updateTransferStatus(transfer.id, TransferStatus.FAILED)
+                    AppNotificationManager.notifyTransferFailed(context, "Sending $fileName failed: ${e.localizedMessage}")
+                    AppLogger.logEvent("EchoViewModel", "Outgoing transfer failed for $fileName with exception: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun queryFileName(uri: android.net.Uri): String {
+        return fileRepository.getFileName(uri) ?: "Selected File"
+    }
+
+    fun queryFileSize(uri: android.net.Uri): Long {
+        return fileRepository.getFileSize(uri)
+    }
+
     fun clearTransfers() {
         viewModelScope.launch {
             try {

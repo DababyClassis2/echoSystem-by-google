@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "date": "2026-05-22",
+  "description": "Redesigned LocalShare bottom bar navigation, implemented network and UI defense trust layer supporting Accept, Reject, and Block actions for remote companion clients.",
+  "changed_files": [
+    "app/src/main/java/com/echosystem/localshare/ui/navigation/AppScreens.kt",
+    "app/src/main/java/com/echosystem/localshare/server/routes/PairingRoutes.kt",
+    "app/src/main/java/com/echosystem/localshare/service/EchoCoreService.kt",
+    "app/src/main/java/com/echosystem/localshare/server/routes/FileRoutes.kt",
+    "app/src/main/java/com/echosystem/localshare/viewmodel/EchoViewModel.kt",
+    "app/src/main/java/com/echosystem/localshare/ui/screens/Screens.kt"
+  ]
+}

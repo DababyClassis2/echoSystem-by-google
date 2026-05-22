@@ -1,0 +1,27 @@
+--- app/src/main/java/com/echosystem/localshare/viewmodel/EchoViewModel.kt
++++ app/src/main/java/com/echosystem/localshare/viewmodel/EchoViewModel.kt
+@@ -30,4 +30,6 @@
+ import javax.inject.Inject
++import com.echosystem.localshare.security.TrustManager
++import com.echosystem.localshare.core.CoreSystemSupervisor
+ 
+ @HiltViewModel
+ class EchoViewModel @Inject constructor(
+@@ -34,4 +36,5 @@
+     private val fileRepository: FileRepository,
+     private val pairingManager: PairingManager,
++    val trustManager: TrustManager,
+     private val nsdHelper: NsdHelper,
+     private val httpClient: HttpClient,
+@@ -37,4 +40,5 @@
+     private val serverEventBus: ServerEventBus,
+-    private val coreSystemSupervisor: CoreSystemSupervisor
++    val coreSystemSupervisor: CoreSystemSupervisor
+ ) : ViewModel() {
+ 
++    private val _incomingPairingRequest = MutableStateFlow<ServerEvent.PairingRequest?>(null)
++    val incomingPairingRequest = _incomingPairingRequest.asStateFlow()
++
++    fun acceptPairing(event: ServerEvent.PairingRequest) { ... }
++    fun rejectPairing(event: ServerEvent.PairingRequest) { ... }
++    fun blockDeviceFromPairing(event: ServerEvent.PairingRequest) { ... }

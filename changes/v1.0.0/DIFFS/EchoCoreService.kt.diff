@@ -1,0 +1,22 @@
+--- app/src/main/java/com/echosystem/localshare/service/EchoCoreService.kt
++++ app/src/main/java/com/echosystem/localshare/service/EchoCoreService.kt
+@@ -19,4 +19,5 @@
+ import com.echosystem.localshare.security.PairingManager
++import com.echosystem.localshare.security.TrustManager
+ import com.echosystem.localshare.server.ServerEventBus
+ import com.echosystem.localshare.server.routes.deviceRoutes
+ import com.echosystem.localshare.server.routes.fileRoutes
+@@ -37,6 +38,8 @@
+     @Inject lateinit var pairingManager: PairingManager
++    @Inject lateinit var trustManager: TrustManager
+     @Inject lateinit var serverEventBus: ServerEventBus
+ 
+     private var serverJob: Job? = null
+@@ -141,5 +144,5 @@
+                     deviceRoutes(this@EchoCoreService, pairingManager)
+-                    fileRoutes(fileRepository, serverEventBus, pairingManager)
+-                    pairingRoutes(pairingManager)
++                    fileRoutes(fileRepository, serverEventBus, pairingManager, trustManager)
++                    pairingRoutes(pairingManager, serverEventBus)
+                     webSocketRoutes(serverEventBus)
+                 }

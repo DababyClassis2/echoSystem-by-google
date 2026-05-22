@@ -1,0 +1,29 @@
+--- app/src/main/java/com/echosystem/localshare/server/routes/PairingRoutes.kt
++++ app/src/main/java/com/echosystem/localshare/server/routes/PairingRoutes.kt
+@@ -1,9 +1,11 @@
+ package com.echosystem.localshare.server.routes
+ 
+ import com.echosystem.localshare.security.PairingManager
++import com.echosystem.localshare.server.ServerEventBus
++import com.echosystem.localshare.model.ServerEvent
+ import io.ktor.http.*
+ import io.ktor.server.application.*
+ import io.ktor.server.request.*
+ import io.ktor.server.response.*
+ import io.ktor.server.routing.*
+ import kotlinx.serialization.Serializable
+@@ -11,10 +13,10 @@
+ @Serializable
+-data class PairingRequest(val deviceId: String, val pin: String)
++data class PairingRequest(val deviceId: String, val pin: String, val deviceName: String = "Unknown Client")
+ 
+-fun Route.pairingRoutes(pairingManager: PairingManager) {
++fun Route.pairingRoutes(pairingManager: PairingManager, serverEventBus: ServerEventBus) {
+     route("/pairing") {
+         post("/request") {
+             try {
+                 val req = call.receive<PairingRequest>()
++                serverEventBus.emit(ServerEvent.PairingRequest(req.deviceId, req.deviceName))
+                 if (pairingManager.verifyPin(req.pin)) {
+                     pairingManager.markAsPaired(req.deviceId)
+                     call.respond(HttpStatusCode.OK, "Successfully Paired")

@@ -49,6 +49,8 @@ import com.echosystem.localshare.ui.components.TransferItemRow
 import com.echosystem.localshare.viewmodel.EchoViewModel
 import kotlinx.coroutines.launch
 import java.io.File
+import androidx.compose.foundation.BorderStroke
+import com.echosystem.localshare.logging.AppLogger
 
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -56,16 +58,70 @@ import androidx.navigation.compose.rememberNavController
 import com.echosystem.localshare.ui.navigation.AppBottomNavigationBar
 import com.echosystem.localshare.ui.navigation.Screen
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: EchoViewModel = hiltViewModel()) {
     var showOnboarding by remember { mutableStateOf(true) }
     val webShareViewModel: WebShareViewModel = hiltViewModel()
     val navController = rememberNavController()
 
+    var showMenu by remember { mutableStateOf(false) }
+
     if (showOnboarding) {
         OnboardingScreen(onGetStarted = { showOnboarding = false })
     } else {
         Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("LocalShare", fontWeight = FontWeight.Black) },
+                    actions = {
+                        IconButton(onClick = { showMenu = !showMenu }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Trusted Devices") },
+                                leadingIcon = { Icon(Icons.Default.Security, "Trusted Devices") },
+                                onClick = {
+                                    showMenu = false
+                                    navController.navigate(Screen.TrustedDevices.route)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Transfer History") },
+                                leadingIcon = { Icon(Icons.Default.History, "History") },
+                                onClick = {
+                                    showMenu = false
+                                    navController.navigate(Screen.History.route)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Settings") },
+                                leadingIcon = { Icon(Icons.Default.Settings, "Settings") },
+                                onClick = {
+                                    showMenu = false
+                                    navController.navigate(Screen.Settings.route)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Developer Tools") },
+                                leadingIcon = { Icon(Icons.Default.Build, "Developer") },
+                                onClick = {
+                                    showMenu = false
+                                    navController.navigate(Screen.Developer.route)
+                                }
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+            },
             bottomBar = { AppBottomNavigationBar(navController = navController) }
         ) { padding ->
             NavHost(
@@ -80,6 +136,7 @@ fun MainScreen(viewModel: EchoViewModel = hiltViewModel()) {
                 composable(Screen.WebShare.route) { WebShareScreen(webShareViewModel) }
                 composable(Screen.Settings.route) { SettingsScreen(viewModel) }
                 composable(Screen.Developer.route) { DeveloperAuditorScreen(viewModel) }
+                composable(Screen.TrustedDevices.route) { TrustedDevicesScreen(viewModel) }
             }
         }
     }
@@ -521,12 +578,18 @@ fun SendFileScreen(viewModel: EchoViewModel) {
     var pairErrorMessage by remember { mutableStateOf<String?>(null) }
     var isPairingProcessing by remember { mutableStateOf(false) }
 
-    // Multi-format launcher for storage file picker
+    // Multi-file selection state
+    var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var selectedFilesInfo by remember { mutableStateOf<List<Pair<String, Long>>>(emptyList()) }
+
     val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null && deviceToPair != null) {
-            viewModel.sendFileToDevice(deviceToPair!!, uri)
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        selectedUris = uris
+        selectedFilesInfo = uris.map { uri ->
+            val name = viewModel.queryFileName(uri)
+            val size = viewModel.queryFileSize(uri)
+            Pair(name, size)
         }
     }
 
@@ -537,7 +600,7 @@ fun SendFileScreen(viewModel: EchoViewModel) {
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             
             Text(
                 text = "Transmit Files",
@@ -547,56 +610,129 @@ fun SendFileScreen(viewModel: EchoViewModel) {
             )
             
             Text(
-                text = "Select a recipient node on WLAN",
+                text = "Select files and choose a nearby device to transmit",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 24.dp)
+                modifier = Modifier.padding(bottom = 16.dp)
             )
 
-            // Category Picker row with pleasant visuals
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+            // Real Multi-File Picker Control Panel Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
             ) {
-                val demoCategories = listOf(
-                    Triple("Photos", Icons.Default.Image, Color(0xFFE3F2FD)),
-                    Triple("Videos", Icons.Default.Movie, Color(0xFFF3E5F5)),
-                    Triple("Music", Icons.Default.MusicNote, Color(0xFFE8F5E9)),
-                    Triple("Docs", Icons.Default.Description, Color(0xFFFFF3E0))
-                )
-                demoCategories.forEach { (catName, catIcon, catCol) ->
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable {
-                            if (devices.isNotEmpty()) {
-                                deviceToPair = devices.first()
-                                filePickerLauncher.launch("*/*")
-                            } else {
-                                viewModel.addManualLog("Send", "User tapped send category but no nodes found")
-                            }
-                        }
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = catCol,
-                            modifier = Modifier.size(50.dp)
+                        Text(
+                            text = "Picked Files (${selectedUris.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Button(
+                            onClick = { filePickerLauncher.launch("*/*") },
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = catIcon,
-                                    contentDescription = catName,
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                                    modifier = Modifier.size(22.dp)
-                                )
+                            Icon(Icons.Default.DriveFileRenameOutline, "Browse", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Browse Files")
+                        }
+                    }
+
+                    if (selectedFilesInfo.isEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(80.dp)
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "No files selected. Tap Browse Files above.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 140.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(selectedFilesInfo) { (name, size) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(6.dp))
+                                        .padding(8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.InsertDriveFile,
+                                        contentDescription = "File Type",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = name,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = formatShareBytes(size),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(catName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            fun totalSize(): Long = selectedFilesInfo.sumOf { it.second }
+                            Text(
+                                text = "Total Size: ${formatShareBytes(totalSize())}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            TextButton(
+                                onClick = {
+                                    selectedUris = emptyList()
+                                    selectedFilesInfo = emptyList()
+                                },
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Icon(Icons.Default.Clear, "Clear Selection", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Clear Selection")
+                            }
+                        }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(32.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -654,9 +790,13 @@ fun SendFileScreen(viewModel: EchoViewModel) {
                         DeviceCard(
                             device = device,
                             onClick = {
+                                if (selectedUris.isEmpty()) {
+                                    AppLogger.logEvent("Send", "User tapped recipient device but no files selected")
+                                    return@DeviceCard
+                                }
                                 deviceToPair = device
                                 if (device.isPaired) {
-                                    filePickerLauncher.launch("*/*")
+                                    viewModel.sendMultipleFilesToDevice(device, selectedUris)
                                 } else {
                                     showPairDialog = true
                                     pairPinInput = ""
@@ -672,7 +812,7 @@ fun SendFileScreen(viewModel: EchoViewModel) {
         }
 
         // Active Overlay Progress Drawer logic
-        val ongoing = transferProgress.filter { it.status == TransferStatus.ONGOING }
+        val ongoing = transferProgress.filter { !it.isIncoming && it.status == TransferStatus.ONGOING }
         if (ongoing.isNotEmpty()) {
             val transfer = ongoing.first()
             Card(
@@ -682,7 +822,7 @@ fun SendFileScreen(viewModel: EchoViewModel) {
                     .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
                     .shadow(8.dp),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(6.dp))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -738,7 +878,7 @@ fun SendFileScreen(viewModel: EchoViewModel) {
                                     isPairingProcessing = false
                                     if (success) {
                                         showPairDialog = false
-                                        filePickerLauncher.launch("*/*")
+                                        viewModel.sendMultipleFilesToDevice(deviceToPair!!, selectedUris)
                                     } else {
                                         pairErrorMessage = error ?: "Pairing key matches failed"
                                     }
@@ -761,6 +901,13 @@ fun SendFileScreen(viewModel: EchoViewModel) {
             )
         }
     }
+}
+
+fun formatShareBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
+    val pre = "KMGTPE"[exp - 1] + "B"
+    return String.format("%.1f %s", bytes / Math.pow(1024.0, exp.toDouble()), pre)
 }
 
 @Composable
@@ -2097,6 +2244,226 @@ fun DeveloperAuditorScreen(viewModel: EchoViewModel) {
             dismissButton = {
                 TextButton(onClick = { showBiometricConfirmForDevice = null }) {
                     Text("Cancel", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun TrustedDevicesScreen(viewModel: EchoViewModel) {
+    val trustedDevices by viewModel.trustManager.trustedDevices.collectAsState()
+    var editingDevice by remember { mutableStateOf<com.echosystem.localshare.security.TrustedDevice?>(null) }
+    var noteInput by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text(
+            text = "Trusted Devices Shield",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = "These active nodes are authorized to receive directly without manual PIN prompt request flow.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        if (trustedDevices.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = "No trusted files",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "No Paired / Trusted Devices Yet",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Initiate a pairing PIN hand-shake from Send tab or connect through local clients.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(trustedDevices) { device ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (device.blocked) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
+                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = device.name,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (device.blocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        if (device.blocked) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.error,
+                                                shape = RoundedCornerShape(4.dp),
+                                                modifier = Modifier.padding(horizontal = 4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "BLOCKED",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onError,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "ID: ${device.id.take(12)}...",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    )
+                                }
+                                
+                                IconButton(onClick = {
+                                    viewModel.trustManager.setDeviceBlocked(device.id, !device.blocked)
+                                }) {
+                                    Icon(
+                                        imageVector = if (device.blocked) Icons.Default.LockOpen else Icons.Default.Block,
+                                        contentDescription = "Block / Unblock",
+                                        tint = if (device.blocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+
+                            if (device.fingerprint.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Shield Hash: ${device.fingerprint.take(24)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            }
+
+                            if (device.note.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = "Label Note: ${device.note}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        editingDevice = device
+                                        noteInput = device.note
+                                    }
+                                ) {
+                                    Icon(Icons.Default.Edit, "Edit labels", modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Add Note")
+                                }
+                                
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                Button(
+                                    onClick = {
+                                        viewModel.trustManager.setDeviceTrust(device.id, device.name, false)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.9f)
+                                    )
+                                ) {
+                                    Text("Revoke Trust", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (editingDevice != null) {
+        AlertDialog(
+            onDismissRequest = { editingDevice = null },
+            title = { Text("Edit Device Label") },
+            text = {
+                Column {
+                    Text("Add custom memo/note for details of device ${editingDevice?.name}:")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = noteInput,
+                        onValueChange = { noteInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("e.g. My Office Work Laptop") }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        editingDevice?.let {
+                            viewModel.trustManager.setDeviceNote(it.id, noteInput)
+                        }
+                        editingDevice = null
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingDevice = null }) {
+                    Text("Cancel")
                 }
             }
         )
