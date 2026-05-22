@@ -89,6 +89,55 @@ class WebShareServer(private val context: Context) {
                     call.respondText(response, ContentType.Application.Json)
                 }
 
+                get("/list") {
+                    val receivedDir = getReceivedDirectory()
+                    val reqPath = call.parameters["path"] ?: ""
+                    val targetDir = File(receivedDir, reqPath).canonicalFile
+
+                    // Check for directory traversal attacks
+                    if (!targetDir.startsWith(receivedDir.canonicalFile)) {
+                        call.respond(HttpStatusCode.BadRequest, "Invalid directory path requested")
+                        return@get
+                    }
+
+                    if (!targetDir.exists()) {
+                        targetDir.mkdirs()
+                    }
+
+                    val dirsJson = mutableListOf<String>()
+                    val filesJson = mutableListOf<String>()
+
+                    targetDir.listFiles()?.forEach { file ->
+                        val relativePath = file.relativeTo(receivedDir).path.replace("\\", "/")
+                        if (file.isDirectory) {
+                            dirsJson.add("""{"name": "${escapeJson(file.name)}", "path": "${escapeJson(relativePath)}"}""")
+                        } else {
+                            val size = file.length()
+                            val formatted = formatBytes(size)
+                            val ext = file.extension.lowercase()
+                            val type = getFileTypeCategory(ext)
+                            filesJson.add(
+                                """{
+                                    "name": "${escapeJson(file.name)}", 
+                                    "path": "${escapeJson(relativePath)}", 
+                                    "size": $size, 
+                                    "formattedSize": "$formatted", 
+                                    "type": "$type", 
+                                    "extension": "$ext"
+                                }""".trimIndent()
+                            )
+                        }
+                    }
+
+                    val response = """{
+                        "currentPath": "${escapeJson(reqPath)}",
+                        "directories": [${dirsJson.joinToString(",")}],
+                        "files": [${filesJson.joinToString(",")}]
+                    }""".trimIndent()
+
+                    call.respondText(response, ContentType.Application.Json)
+                }
+
                 // 3. File Preview snippet/binary service
                 get("/preview") {
                     val receivedDir = getReceivedDirectory()
@@ -159,6 +208,37 @@ class WebShareServer(private val context: Context) {
 
                 // 6. Manage creating Folders dynamically
                 post("/create-folder") {
+                    val receivedDir = getReceivedDirectory()
+                    val parentPath = call.parameters["path"] ?: ""
+                    val folderName = call.parameters["name"] ?: ""
+
+                    if (folderName.isEmpty()) {
+                        call.respond(HttpStatusCode.BadRequest, "Folder name is empty")
+                        return@post
+                    }
+
+                    val parentDir = File(receivedDir, parentPath).canonicalFile
+                    if (!parentDir.startsWith(receivedDir.canonicalFile)) {
+                        call.respond(HttpStatusCode.BadRequest, "Access outside boundaries")
+                        return@post
+                    }
+
+                    val newDir = File(parentDir, folderName)
+                    if (newDir.exists()) {
+                        call.respond(HttpStatusCode.Conflict, "Directory already exists")
+                        return@post
+                    }
+
+                    val created = newDir.mkdirs()
+                    if (created) {
+                        broadcastToSockets("""{"type":"refresh"}""")
+                        call.respondText("Folder created securely")
+                    } else {
+                        call.respond(HttpStatusCode.InternalServerError, "Failed to create directory")
+                    }
+                }
+
+                post("/mkdir") {
                     val receivedDir = getReceivedDirectory()
                     val parentPath = call.parameters["path"] ?: ""
                     val folderName = call.parameters["name"] ?: ""
@@ -375,7 +455,7 @@ class WebShareServer(private val context: Context) {
     }
 
     private fun getReceivedDirectory(): File {
-        val downloadDir = File(context.getExternalFilesDir(null), "Received")
+        val downloadDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
         if (!downloadDir.exists()) {
             downloadDir.mkdirs()
         }

@@ -47,7 +47,7 @@ class FileRepository @Inject constructor(
     }
 
     fun saveFile(fileName: String, inputStream: InputStream): File {
-        val downloadDir = File(context.getExternalFilesDir(null), "Received")
+        val downloadDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
         if (!downloadDir.exists()) downloadDir.mkdirs()
         
         val targetFile = File(downloadDir, fileName)
@@ -58,13 +58,13 @@ class FileRepository @Inject constructor(
     }
 
     fun getReceivedFiles(): List<File> {
-        val downloadDir = File(context.getExternalFilesDir(null), "Received")
+        val downloadDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
         if (!downloadDir.exists()) return emptyList()
         return downloadDir.listFiles()?.filter { it.isFile } ?: emptyList()
     }
 
     fun deleteReceivedFile(fileName: String): Boolean {
-        val downloadDir = File(context.getExternalFilesDir(null), "Received")
+        val downloadDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
         val targetFile = File(downloadDir, fileName)
         return if (targetFile.exists()) {
             targetFile.delete()
@@ -74,7 +74,7 @@ class FileRepository @Inject constructor(
     }
 
     fun getReceivedFilesDir(): File {
-        val downloadDir = File(context.getExternalFilesDir(null), "Received")
+        val downloadDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
         if (!downloadDir.exists()) downloadDir.mkdirs()
         return downloadDir
     }
