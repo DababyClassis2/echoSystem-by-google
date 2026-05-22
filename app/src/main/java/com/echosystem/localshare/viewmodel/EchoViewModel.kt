@@ -83,15 +83,18 @@ class EchoViewModel @Inject constructor(
                         AppLogger.logEvent("EchoViewModel", "Received pairing connection query from client ID: ${event.deviceId}")
                     }
                     is ServerEvent.TransferStarted -> {
-                        val incomingTransfer = FileTransfer(
-                            id = event.fileId,
-                            fileName = event.fileName,
-                            size = event.size,
-                            status = TransferStatus.ONGOING,
-                            isIncoming = true,
-                            remoteDeviceName = "Nearby Host"
-                        )
-                        _transferProgress.update { it + incomingTransfer }
+                        val exists = _transferProgress.value.any { it.id == event.fileId || it.fileName == event.fileName }
+                        if (!exists) {
+                            val incomingTransfer = FileTransfer(
+                                id = event.fileId,
+                                fileName = event.fileName,
+                                size = event.size,
+                                status = TransferStatus.ONGOING,
+                                isIncoming = true,
+                                remoteDeviceName = "Nearby Host"
+                            )
+                            _transferProgress.update { it + incomingTransfer }
+                        }
                         AppLogger.logEvent("EchoViewModel", "Incoming transmission starting: ${event.fileName} (${event.size} bytes)")
                     }
                     is ServerEvent.TransferProgress -> {
@@ -255,18 +258,27 @@ class EchoViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val files = fileRepository.getReceivedFiles()
-                val transfers = files.map { file ->
-                    FileTransfer(
-                        id = file.name,
-                        fileName = file.name,
-                        size = file.length(),
-                        progress = 1f,
-                        status = TransferStatus.COMPLETED,
-                        isIncoming = true,
-                        remoteDeviceName = "Nearby Node"
-                    )
+                val fileNamesOnDisk = files.map { it.name }.toSet()
+                
+                _transferProgress.update { currentList ->
+                    val ongoingTransfers = currentList.filter { it.status == TransferStatus.ONGOING }
+                    val existingCompletedOnDisk = currentList.filter {
+                        it.status == TransferStatus.COMPLETED && fileNamesOnDisk.contains(it.fileName)
+                    }
+                    val knownNames = (ongoingTransfers + existingCompletedOnDisk).map { it.fileName }.toSet()
+                    val newTransfers = files.filter { !knownNames.contains(it.name) }.map { file ->
+                        FileTransfer(
+                            id = file.name,
+                            fileName = file.name,
+                            size = file.length(),
+                            progress = 1f,
+                            status = TransferStatus.COMPLETED,
+                            isIncoming = true,
+                            remoteDeviceName = "Nearby Node"
+                        )
+                    }
+                    ongoingTransfers + existingCompletedOnDisk + newTransfers
                 }
-                _transferProgress.value = transfers
             } catch (e: Exception) {
                 e.printStackTrace()
             }

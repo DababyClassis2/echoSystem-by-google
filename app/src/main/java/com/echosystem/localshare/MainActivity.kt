@@ -14,7 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.echosystem.localshare.core.CoreSystemSupervisor
-import com.echosystem.localshare.service.FileTransferService
+import com.echosystem.localshare.service.EchoCoreService
 import com.echosystem.localshare.ui.screens.MainScreen
 import com.echosystem.localshare.ui.theme.EchoSystemTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        val intent = Intent(this, FileTransferService::class.java)
+        val intent = Intent(this, EchoCoreService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {
@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         // Optionally stop the service if you only want it running while app is visible
-        // stopService(Intent(this, FileTransferService::class.java))
+        // stopService(Intent(this, EchoCoreService::class.java))
     }
 
     private fun checkPermissions() {

@@ -139,8 +139,8 @@ class CoreSystemSupervisor @Inject constructor(
             sameDeviceCountTicks++
             if (sameDeviceCountTicks >= 4) { // 60 seconds of complete NSD silence
                 sameDeviceCountTicks = 0
-                AppLogger.logEvent("NSD_WATCHDOG", "NSD lockup suspected (0 devices across 60s). Pinging multicast fallback socket...")
-                // In a production setup, we can recommend a discovery trigger check or refresh
+                AppLogger.logEvent("NSD_WATCHDOG", "NSD lockup suspected (0 devices across 60s). Re-triggering NSD registration recovery...")
+                com.echosystem.localshare.service.EchoCoreService.getInstance()?.restartNsd()
             }
         } else {
             sameDeviceCountTicks = 0
@@ -157,9 +157,9 @@ class CoreSystemSupervisor @Inject constructor(
                     // port is active & accepting connections
                 }
             } catch (e: Exception) {
-                AppLogger.logEvent("SERVER_WATCHDOG", "WARNING: Port 8080 netty socket ping failed! Attempting background service restart trigger...")
-                // Server might be stuck. Post an event to the EventBus so ViewModels or Services can react
-                serverEventBus.tryEmit(ServerEvent.TransferFailed("netty_crash", "Local netty gateway unresponsive on loopback."))
+                AppLogger.logEvent("SERVER_WATCHDOG", "WARNING: Port 8080 Netty server ping failed! Restarting Netty engine...")
+                com.echosystem.localshare.service.EchoCoreService.getInstance()?.restartNetty()
+                serverEventBus.tryEmit(ServerEvent.TransferFailed("netty_crash", "Local netty gateway unresponsive. Netty server restarted."))
             }
         }
     }

@@ -64,7 +64,7 @@
 
         <!-- Foreground service that hosts the Transfer loops -->
         <service
-            android:name=".service.FileTransferService"
+            android:name=".service.EchoCoreService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
