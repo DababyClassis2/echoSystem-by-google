@@ -66,7 +66,10 @@ The system uses a custom REST API over local Wi-Fi:
 - `GET /web/files`: Fetches the structured file metadata.
 - `POST /web/upload`: Multipath file intake.
 - `GET /web/download`: Secure file streaming.
-- `POST /web/manage/block`: Remote node isolation.
+- `POST /management/block`: Remote node isolation.
+- `POST /management/rename`: Assign local aliases to nodes.
+- `POST /management/permissions`: Policy enforcement.
+- `GET /management/trusted`: List all authenticated mesh members.
 
 ### Security Registry (New v0.2.3)
 - **Persistent Trust**: Managed by `TrustManager` using `EncryptedSharedPreferences`.

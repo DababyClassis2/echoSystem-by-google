@@ -1,0 +1,19 @@
+--- a/app/src/main/java/com/echosystem/localshare/server/routes/FileRoutes.kt
++++ b/app/src/main/java/com/echosystem/localshare/server/routes/FileRoutes.kt
+@@ -29,1 +29,2 @@
+-    val extension: String
++    val extension: String,
++    val isDirectory: Boolean
+@@ -51,0 +52,1 @@
++        val path = call.parameters["path"] ?: ""
+@@ -70,1 +72,11 @@
+-        val files = fileRepository.getReceivedFiles()
++        val rootDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
++        val targetDir = if (path.isEmpty()) rootDir else File(rootDir, path)
++        
++        if (!targetDir.exists() || !targetDir.absolutePath.startsWith(rootDir.absolutePath)) {
++            call.respond(HttpStatusCode.NotFound, "Directory not found")
++            return@get
++        }
++
++        val files = targetDir.listFiles()?.toList() ?: emptyList()

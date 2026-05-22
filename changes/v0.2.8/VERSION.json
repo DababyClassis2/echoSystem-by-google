@@ -1,0 +1,13 @@
+{
+  "version": "0.2.8",
+  "versionCode": 10,
+  "timestamp": "2026-05-22T14:20:00Z",
+  "features": [
+    "Web Dashboard 2.0 with Glassmorphism Theme",
+    "Two-pane layout: Sidebar Folder Tree & File Grid",
+    "Security Registry Admin Panel for mesh node management",
+    "Permission-aware UI (Browse, Upload, Download, Delete, Manage)",
+    "Real-time upload synchronization with progress reporting",
+    "Enhanced backend routes: /management/* and path-aware /web/*"
+  ]
+}

@@ -1,0 +1,14 @@
+--- a/app/src/main/java/com/echosystem/localshare/server/routes/ManagementRoutes.kt
++++ b/app/src/main/java/com/echosystem/localshare/server/routes/ManagementRoutes.kt
+@@ -35,1 +35,1 @@
+-    post("/web/manage/permissions") {
++    post("/management/permissions") {
+@@ -62,1 +62,1 @@
+-    post("/web/manage/rename") {
++    post("/management/rename") {
+@@ -85,1 +85,1 @@
+-    post("/web/manage/block") {
++    post("/management/block") {
+@@ -108,1 +108,1 @@
+-    get("/web/manage/trusted") {
++    get("/management/trusted") {

@@ -26,7 +26,8 @@ data class FileWebResponse(
     val size: Long, 
     val formattedSize: String,
     val type: String,
-    val extension: String
+    val extension: String,
+    val isDirectory: Boolean
 )
 
 fun Route.fileRoutes(
@@ -50,6 +51,7 @@ fun Route.fileRoutes(
     get("/web/files") {
         val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
         val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
+        val path = call.parameters["path"] ?: ""
 
         if (trustManager.isDeviceBlocked(deviceId)) {
             call.respond(HttpStatusCode.Forbidden, "Access Blocked")
@@ -66,14 +68,23 @@ fun Route.fileRoutes(
              return@get
         }
 
-        val files = fileRepository.getReceivedFiles()
-        val response = files.map { file ->
-            val size = file.length()
-            val formatted = formatBytes(size)
-            val ext = file.extension.lowercase()
-            val type = getFileTypeCategory(ext)
-            FileWebResponse(file.name, size, formatted, type, ext)
+        val rootDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+        val targetDir = if (path.isEmpty()) rootDir else File(rootDir, path)
+        
+        if (!targetDir.exists() || !targetDir.absolutePath.startsWith(rootDir.absolutePath)) {
+            call.respond(HttpStatusCode.NotFound, "Directory not found")
+            return@get
         }
+
+        val files = targetDir.listFiles()?.toList() ?: emptyList()
+        val response = files.map { file ->
+            val size = if (file.isDirectory) 0 else file.length()
+            val formatted = if (file.isDirectory) "--" else formatBytes(size)
+            val ext = file.extension.lowercase()
+            val type = if (file.isDirectory) "folder" else getFileTypeCategory(ext)
+            FileWebResponse(file.name, size, formatted, type, ext, file.isDirectory)
+        }.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+        
         call.respondText(Json.encodeToString(response), ContentType.Application.Json)
     }
 
@@ -82,6 +93,7 @@ fun Route.fileRoutes(
         val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
         val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
         val fileName = call.parameters["fileName"] ?: ""
+        val path = call.parameters["path"] ?: ""
 
         if (trustManager.isDeviceBlocked(deviceId)) {
             call.respond(HttpStatusCode.Forbidden, "Access Blocked")
@@ -103,10 +115,11 @@ fun Route.fileRoutes(
             return@get
         }
 
-        val receivedDir = fileRepository.getReceivedFilesDir()
-        val file = File(receivedDir, fileName)
+        val rootDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+        val targetDir = if (path.isEmpty()) rootDir else File(rootDir, path)
+        val file = File(targetDir, fileName)
 
-        if (!file.exists() || !file.isFile) {
+        if (!file.exists() || !file.isFile || !file.absolutePath.startsWith(rootDir.absolutePath)) {
             call.respond(HttpStatusCode.NotFound, "File not found")
             return@get
         }
@@ -119,6 +132,7 @@ fun Route.fileRoutes(
     post("/web/upload") {
         val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
         val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
+        val path = call.parameters["path"] ?: ""
 
         if (trustManager.isDeviceBlocked(deviceId)) {
             call.respond(HttpStatusCode.Forbidden, "Access Blocked")
@@ -137,18 +151,22 @@ fun Route.fileRoutes(
 
         try {
             val multipart = call.receiveMultipart()
-            var fileName = "received_web_file"
+            var uploadedFileName = "received_web_file"
             val contentLength = call.request.header(HttpHeaders.ContentLength)?.toLongOrNull() ?: 0L
 
             multipart.forEachPart { part ->
                 if (part is PartData.FileItem) {
-                    fileName = part.originalFileName ?: "file_${System.currentTimeMillis()}"
+                    uploadedFileName = part.originalFileName ?: "file_${System.currentTimeMillis()}"
                     
-                    val file = withContext(Dispatchers.IO) {
-                        val downloadDir = fileRepository.getReceivedFilesDir()
-                        val targetFile = File(downloadDir, fileName)
+                    withContext(Dispatchers.IO) {
+                        val rootDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+                        val targetDir = if (path.isEmpty()) rootDir else File(rootDir, path)
+                        
+                        if (!targetDir.exists()) targetDir.mkdirs()
+                        
+                        val targetFile = File(targetDir, uploadedFileName)
 
-                        serverEventBus.emit(ServerEvent.TransferStarted(fileName, fileName, contentLength))
+                        serverEventBus.emit(ServerEvent.TransferStarted(uploadedFileName, uploadedFileName, contentLength))
 
                         part.streamProvider().use { input ->
                             FileOutputStream(targetFile).use { output ->
@@ -163,15 +181,14 @@ fun Route.fileRoutes(
                                     
                                     val now = System.currentTimeMillis()
                                     if (contentLength > 0 && now - lastNotify > 100) {
-                                        serverEventBus.emit(ServerEvent.TransferProgress(fileName, total.toFloat() / contentLength))
+                                        serverEventBus.emit(ServerEvent.TransferProgress(uploadedFileName, total.toFloat() / contentLength))
                                         lastNotify = now
                                     }
                                     read = input.read(buffer)
                                 }
                             }
                         }
-                        serverEventBus.emit(ServerEvent.TransferCompleted(fileName))
-                        targetFile
+                        serverEventBus.emit(ServerEvent.TransferCompleted(uploadedFileName))
                     }
                 }
                 part.dispose()
@@ -188,6 +205,7 @@ fun Route.fileRoutes(
         val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
         val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
         val fileName = call.parameters["fileName"] ?: ""
+        val path = call.parameters["path"] ?: ""
 
         if (trustManager.isDeviceBlocked(deviceId)) {
             call.respond(HttpStatusCode.Forbidden, "Access Blocked")
@@ -209,11 +227,20 @@ fun Route.fileRoutes(
             return@post
         }
 
-        val deleted = fileRepository.deleteReceivedFile(fileName)
+        val rootDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+        val targetDir = if (path.isEmpty()) rootDir else File(rootDir, path)
+        val file = File(targetDir, fileName)
+
+        if (!file.exists() || !file.absolutePath.startsWith(rootDir.absolutePath)) {
+            call.respond(HttpStatusCode.NotFound, "Not Found")
+            return@post
+        }
+
+        val deleted = if (file.isDirectory) file.deleteRecursively() else file.delete()
         if (deleted) {
             call.respondText("OK")
         } else {
-            call.respond(HttpStatusCode.NotFound, "Not Found")
+            call.respond(HttpStatusCode.InternalServerError, "Deletion failed")
         }
     }
 

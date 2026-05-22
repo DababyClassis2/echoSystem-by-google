@@ -32,7 +32,7 @@ fun Route.managementRoutes(
     trustManager: TrustManager,
     pairingManager: PairingManager
 ) {
-    post("/web/manage/permissions") {
+    post("/management/permissions") {
         val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
         val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
         
@@ -59,7 +59,7 @@ fun Route.managementRoutes(
         }
     }
     
-    post("/web/manage/rename") {
+    post("/management/rename") {
         val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
         val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
         
@@ -82,7 +82,7 @@ fun Route.managementRoutes(
         }
     }
 
-    post("/web/manage/block") {
+    post("/management/block") {
         val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
         val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
         
@@ -105,7 +105,7 @@ fun Route.managementRoutes(
         }
     }
 
-    get("/web/manage/trusted") {
+    get("/management/trusted") {
         val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
         val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
         
