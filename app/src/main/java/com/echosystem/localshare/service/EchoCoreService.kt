@@ -17,6 +17,7 @@ import com.echosystem.localshare.security.TrustManager
 import com.echosystem.localshare.server.ServerEventBus
 import com.echosystem.localshare.server.routes.deviceRoutes
 import com.echosystem.localshare.server.routes.fileRoutes
+import com.echosystem.localshare.server.routes.managementRoutes
 import com.echosystem.localshare.server.routes.pairingRoutes
 import com.echosystem.localshare.server.routes.webSocketRoutes
 import dagger.hilt.android.AndroidEntryPoint
@@ -174,6 +175,7 @@ class EchoCoreService : Service() {
                     fileRoutes(this@EchoCoreService, fileRepository, serverEventBus, pairingManager, trustManager)
                     pairingRoutes(pairingManager, trustManager, serverEventBus)
                     webSocketRoutes(serverEventBus)
+                    managementRoutes(trustManager, pairingManager)
                 }
             }.start(wait = false)
             

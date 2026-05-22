@@ -2242,226 +2242,6 @@ fun DeveloperAuditorScreen(viewModel: EchoViewModel) {
 }
 
 @Composable
-fun TrustedDevicesScreen(viewModel: EchoViewModel) {
-    val trustedDevices by viewModel.trustManager.trustedDevices.collectAsState()
-    var editingDevice by remember { mutableStateOf<com.echosystem.localshare.security.TrustedDevice?>(null) }
-    var noteInput by remember { mutableStateOf("") }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "Trusted Devices Shield",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = "These active nodes are authorized to receive directly without manual PIN prompt request flow.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-
-        if (trustedDevices.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = "No trusted files",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "No Paired / Trusted Devices Yet",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "Initiate a pairing PIN hand-shake from Send tab or connect through local clients.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 24.dp)
-                    )
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(trustedDevices) { device ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (device.blocked) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
-                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = device.name,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (device.blocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                                        )
-                                        if (device.blocked) {
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Surface(
-                                                color = MaterialTheme.colorScheme.error,
-                                                shape = RoundedCornerShape(4.dp),
-                                                modifier = Modifier.padding(horizontal = 4.dp)
-                                            ) {
-                                                Text(
-                                                    text = "BLOCKED",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onError,
-                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "ID: ${device.id.take(12)}...",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                    )
-                                }
-                                
-                                IconButton(onClick = {
-                                    viewModel.trustManager.setDeviceBlocked(device.id, !device.blocked)
-                                }) {
-                                    Icon(
-                                        imageVector = if (device.blocked) Icons.Default.LockOpen else Icons.Default.Block,
-                                        contentDescription = "Block / Unblock",
-                                        tint = if (device.blocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                                    )
-                                }
-                            }
-
-                            if (device.fingerprint.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Shield Hash: ${device.fingerprint.take(24)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                )
-                            }
-
-                            if (device.note.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = "Label Note: ${device.note}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                TextButton(
-                                    onClick = {
-                                        editingDevice = device
-                                        noteInput = device.note
-                                    }
-                                ) {
-                                    Icon(Icons.Default.Edit, "Edit labels", modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Add Note")
-                                }
-                                
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                Button(
-                                    onClick = {
-                                        viewModel.trustManager.setDeviceTrust(device.id, device.name, false)
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.9f)
-                                    )
-                                ) {
-                                    Text("Revoke Trust", style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (editingDevice != null) {
-        AlertDialog(
-            onDismissRequest = { editingDevice = null },
-            title = { Text("Edit Device Label") },
-            text = {
-                Column {
-                    Text("Add custom memo/note for details of device ${editingDevice?.name}:")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = noteInput,
-                        onValueChange = { noteInput = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        placeholder = { Text("e.g. My Office Work Laptop") }
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        editingDevice?.let {
-                            viewModel.trustManager.setDeviceNote(it.id, noteInput)
-                        }
-                        editingDevice = null
-                    }
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingDevice = null }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-}
-
-@Composable
 fun WebPortalScreen(viewModel: EchoViewModel) {
     val ipAddress by viewModel.ipAddress.collectAsState()
     val pairingPin by viewModel.pairingPin.collectAsState()
@@ -2581,6 +2361,11 @@ private fun InfoItem(icon: androidx.compose.ui.graphics.vector.ImageVector, top:
 }
 
 @Composable
+fun TrustedDevicesScreen(viewModel: EchoViewModel, onBack: () -> Unit) {
+    SecurityManager(viewModel = viewModel, onClose = onBack)
+}
+
+@Composable
 fun EchoNavHost(
     navController: androidx.navigation.NavHostController,
     viewModel: EchoViewModel,
@@ -2600,7 +2385,9 @@ fun EchoNavHost(
             composable(Screen.WebShare.route) { WebPortalScreen(viewModel) }
             composable(Screen.Settings.route) { SettingsScreen(viewModel) }
             composable(Screen.Developer.route) { DeveloperAuditorScreen(viewModel) }
-            composable(Screen.TrustedDevices.route) { TrustedDevicesScreen(viewModel) }
+            composable(Screen.TrustedDevices.route) { 
+                TrustedDevicesScreen(viewModel = viewModel, onBack = { navController.popBackStack() }) 
+            }
         }
 
         // Shield Guard: Global Discovery Dialog

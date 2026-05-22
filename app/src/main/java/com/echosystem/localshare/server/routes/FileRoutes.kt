@@ -61,6 +61,11 @@ fun Route.fileRoutes(
             return@get
         }
 
+        if (deviceId.isNotEmpty() && !trustManager.hasPermission(deviceId, com.echosystem.localshare.model.DevicePermission.BROWSE_FILES)) {
+             call.respond(HttpStatusCode.Forbidden, "Insufficient Permissions to Browse")
+             return@get
+        }
+
         val files = fileRepository.getReceivedFiles()
         val response = files.map { file ->
             val size = file.length()
@@ -86,6 +91,11 @@ fun Route.fileRoutes(
         if (!pairingManager.verifyPin(pin) && !pairingManager.isPaired(deviceId)) {
             call.respond(HttpStatusCode.Unauthorized, "Unauthorized")
             return@get
+        }
+
+        if (deviceId.isNotEmpty() && !trustManager.hasPermission(deviceId, com.echosystem.localshare.model.DevicePermission.DOWNLOAD_FILES)) {
+             call.respond(HttpStatusCode.Forbidden, "Insufficient Permissions to Download")
+             return@get
         }
 
         if (fileName.isEmpty()) {
@@ -118,6 +128,11 @@ fun Route.fileRoutes(
         if (!pairingManager.verifyPin(pin) && !pairingManager.isPaired(deviceId)) {
             call.respond(HttpStatusCode.Unauthorized, "Unauthorized")
             return@post
+        }
+
+        if (deviceId.isNotEmpty() && !trustManager.hasPermission(deviceId, com.echosystem.localshare.model.DevicePermission.UPLOAD_FILES)) {
+             call.respond(HttpStatusCode.Forbidden, "Insufficient Permissions to Upload")
+             return@post
         }
 
         try {
@@ -184,6 +199,11 @@ fun Route.fileRoutes(
             return@post
         }
 
+        if (deviceId.isNotEmpty() && !trustManager.hasPermission(deviceId, com.echosystem.localshare.model.DevicePermission.DELETE_FILES)) {
+             call.respond(HttpStatusCode.Forbidden, "Insufficient Permissions to Delete")
+             return@post
+        }
+
         if (fileName.isEmpty()) {
             call.respond(HttpStatusCode.BadRequest, "Missing file name")
             return@post
@@ -195,6 +215,20 @@ fun Route.fileRoutes(
         } else {
             call.respond(HttpStatusCode.NotFound, "Not Found")
         }
+    }
+
+    // 6. Get Permissions for specific device (Useful for Web Portal UI hiding)
+    get("/web/permissions") {
+        val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
+        val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
+        
+        if (!pairingManager.verifyPin(pin) && !pairingManager.isPaired(deviceId)) {
+            call.respond(HttpStatusCode.Unauthorized, "Unauthorized")
+            return@get
+        }
+
+        val perms = trustManager.getPermissions(deviceId)
+        call.respond(perms.map { it.name })
     }
 }
 

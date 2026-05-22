@@ -3,6 +3,8 @@ package com.echosystem.localshare.security
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.echosystem.localshare.model.DevicePermission
+import com.echosystem.localshare.model.TrustedDevice
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,14 +13,6 @@ import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class TrustedDevice(
-    val id: String,
-    val name: String,
-    val fingerprint: String,
-    val note: String,
-    val blocked: Boolean,
-    val lastSeen: Long
-)
 
 @Singleton
 class TrustManager @Inject constructor(
@@ -68,7 +62,14 @@ class TrustManager @Inject constructor(
             val note = prefs.getString("note_$deviceId", "") ?: ""
             val blocked = prefs.getBoolean("blocked_$deviceId", false)
             val lastSeen = prefs.getLong("last_seen_$deviceId", System.currentTimeMillis())
-            TrustedDevice(deviceId, name, fingerprint, note, blocked, lastSeen)
+            val permString = prefs.getString("perms_$deviceId", "") ?: ""
+            val perms = permString.split(",")
+                .filter { it.isNotEmpty() }
+                .mapNotNull { 
+                    runCatching { com.echosystem.localshare.model.DevicePermission.valueOf(it) }.getOrNull() 
+                }.toSet()
+            
+            TrustedDevice(deviceId, name, fingerprint, note, blocked, lastSeen, perms)
         }
         _trustedDevices.value = list
     }
@@ -117,6 +118,28 @@ class TrustManager @Inject constructor(
 
     fun getFingerprint(deviceId: String): String? {
         return prefs.getString("fingerprint_$deviceId", null)
+    }
+
+    @Synchronized
+    fun setDevicePermissions(deviceId: String, permissions: Set<com.echosystem.localshare.model.DevicePermission>) {
+        val permString = permissions.joinToString(",") { it.name }
+        prefs.edit().putString("perms_$deviceId", permString).apply()
+        loadTrustedDevices()
+    }
+
+    fun hasPermission(deviceId: String, permission: com.echosystem.localshare.model.DevicePermission): Boolean {
+        if (isDeviceBlocked(deviceId)) return false
+        val perms = getPermissions(deviceId)
+        return perms.contains(permission) || perms.contains(com.echosystem.localshare.model.DevicePermission.MANAGE_PERMISSIONS)
+    }
+
+    fun getPermissions(deviceId: String): Set<com.echosystem.localshare.model.DevicePermission> {
+        val permString = prefs.getString("perms_$deviceId", "") ?: ""
+        return permString.split(",")
+            .filter { it.isNotEmpty() }
+            .mapNotNull { 
+                runCatching { com.echosystem.localshare.model.DevicePermission.valueOf(it) }.getOrNull() 
+            }.toSet()
     }
 
     fun generateFingerprint(deviceId: String, deviceName: String): String {

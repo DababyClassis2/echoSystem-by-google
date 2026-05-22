@@ -62,3 +62,23 @@ data class FileTransfer(
 enum class TransferStatus {
     PENDING, ONGOING, COMPLETED, FAILED
 }
+
+@Serializable
+enum class DevicePermission {
+    BROWSE_FILES,
+    UPLOAD_FILES,
+    DOWNLOAD_FILES,
+    MANAGE_PERMISSIONS,
+    DELETE_FILES
+}
+
+@Serializable
+data class TrustedDevice(
+    val id: String,
+    val name: String,
+    val fingerprint: String,
+    val note: String,
+    val blocked: Boolean,
+    val lastSeen: Long,
+    val permissions: Set<DevicePermission> = emptySet()
+)
