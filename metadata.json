@@ -1,6 +1,6 @@
 {
-  "name": "LocalShare v0.2.5",
-  "description": "Peer-to-peer secure local file sharing | v0.2.5: Unified Devices Tab & Registry Actions.",
+  "name": "LocalShare v0.2.6",
+  "description": "Peer-to-peer secure local file sharing | v0.2.6: Integrated File Grid & Transfer Analytics.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

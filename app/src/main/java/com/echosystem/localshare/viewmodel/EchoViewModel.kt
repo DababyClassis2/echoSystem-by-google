@@ -28,6 +28,7 @@ import io.ktor.http.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.io.InputStream
+import java.io.File
 import javax.inject.Inject
 
 import com.echosystem.localshare.security.TrustManager
@@ -49,6 +50,17 @@ class EchoViewModel @Inject constructor(
     val devices: StateFlow<List<Device>> = deviceRegistry.deviceList
     
     val nsdState: StateFlow<NsdState> = nsdHelper.state
+    
+    // File Browser Logic
+    private val _rootDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+    private val _currentDir = MutableStateFlow(_rootDir)
+    val currentDir: StateFlow<File> = _currentDir.asStateFlow()
+
+    private val _browserFiles = MutableStateFlow<List<File>>(emptyList())
+    val browserFiles: StateFlow<List<File>> = _browserFiles.asStateFlow()
+
+    private val _selectedFiles = MutableStateFlow<Set<File>>(emptySet())
+    val selectedFiles: StateFlow<Set<File>> = _selectedFiles.asStateFlow()
 
     private val _transferProgress = MutableStateFlow<List<FileTransfer>>(emptyList())
     val transferProgress: StateFlow<List<FileTransfer>> = _transferProgress.asStateFlow()
@@ -84,6 +96,8 @@ class EchoViewModel @Inject constructor(
         startDiscovery()
         loadReceivedFiles()
         loadLogs()
+        ensureStandardFolders()
+        refreshBrowserFiles()
 
         // [V1.0.3] Central Event Collector with deduplication
         viewModelScope.launch {
@@ -473,6 +487,70 @@ class EchoViewModel @Inject constructor(
     private fun updateTransferStatus(id: String, status: TransferStatus) {
         _transferProgress.update { list ->
             list.map { if (it.id == id || it.fileName == id) it.copy(status = status) else it }
+        }
+    }
+
+    // --- File Browser 2.0 Logic ---
+    private fun ensureStandardFolders() {
+        listOf("Received", "Sent", "Shared").forEach { subDir ->
+            val folder = File(_rootDir, subDir)
+            if (!folder.exists()) folder.mkdirs()
+        }
+    }
+
+    fun refreshBrowserFiles() {
+        val dir = _currentDir.value
+        if (!dir.exists()) dir.mkdirs()
+        
+        val files = dir.listFiles()?.let { listOf(*it) } ?: emptyList()
+        _browserFiles.value = files.sortedWith(
+            compareBy({ !it.isDirectory }, { it.name.lowercase() })
+        )
+    }
+
+    fun navigateTo(folder: File) {
+        if (folder.isDirectory) {
+            _currentDir.value = folder
+            clearSelection()
+            refreshBrowserFiles()
+        }
+    }
+
+    fun navigateBack(): Boolean {
+        val current = _currentDir.value
+        if (current == _rootDir) return false
+        
+        val parent = current.parentFile ?: _rootDir
+        _currentDir.value = parent
+        clearSelection()
+        refreshBrowserFiles()
+        return true
+    }
+
+    fun toggleSelection(file: File) {
+        _selectedFiles.update { current: Set<File> ->
+            if (current.contains(file)) current.filter { it != file }.toSet() else current + file
+        }
+    }
+
+    fun clearSelection() {
+        _selectedFiles.value = emptySet()
+    }
+
+    fun deleteSelectedFiles() {
+        viewModelScope.launch {
+            _selectedFiles.value.forEach { file ->
+                if (file.isDirectory) file.deleteRecursively() else file.delete()
+            }
+            clearSelection()
+            refreshBrowserFiles()
+        }
+    }
+
+    fun renameFile(file: File, newName: String) {
+        val dest = File(file.parentFile, newName)
+        if (file.renameTo(dest)) {
+            refreshBrowserFiles()
         }
     }
 }

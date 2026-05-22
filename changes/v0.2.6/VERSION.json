@@ -1,0 +1,12 @@
+{
+  "versionName": "0.2.6",
+  "versionCode": 8,
+  "releaseDate": "2026-05-22",
+  "changes": [
+    "Integrated File Grid UI 2.0",
+    "Multi-selection support",
+    "Directory breadcrumb navigation",
+    "Real-time transfer progress bars",
+    "Standard directory auto-provisioning"
+  ]
+}
