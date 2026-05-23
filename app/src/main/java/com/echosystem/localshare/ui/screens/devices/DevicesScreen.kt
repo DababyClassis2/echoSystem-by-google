@@ -1,5 +1,7 @@
 package com.echosystem.localshare.ui.screens.devices
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -29,11 +31,24 @@ fun DevicesScreen(viewModel: EchoViewModel) {
     val pairingPin by viewModel.pairingPin.collectAsState()
     
     var selectedDevice by remember { mutableStateOf<Device?>(null) }
+    var activeSendDevice by remember { mutableStateOf<Device?>(null) }
     var showRenameDialog by remember { mutableStateOf<Device?>(null) }
     var showPairDialog by remember { mutableStateOf<Device?>(null) }
     
     val scope = rememberCoroutineScope()
     val hostState = remember { SnackbarHostState() }
+
+    val fileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        activeSendDevice?.let { dev ->
+            if (uris.isNotEmpty()) {
+                viewModel.sendMultipleFilesToDevice(dev, uris)
+                scope.launch { hostState.showSnackbar("Init transmission of ${uris.size} elements to ${dev.name}") }
+            }
+        }
+        activeSendDevice = null
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(hostState) },
@@ -88,9 +103,8 @@ fun DevicesScreen(viewModel: EchoViewModel) {
                 isTrusted = isTrusted,
                 onDismiss = { selectedDevice = null },
                 onSendFiles = {
-                    // This logic would normally trigger a file picker or navigate to a specialized screen
-                    // For now, let's just log it or notify
-                    scope.launch { hostState.showSnackbar("Transmit interface active for ${device.name}") }
+                    activeSendDevice = device
+                    fileLauncher.launch("*/*")
                     selectedDevice = null
                 },
                 onRename = { 

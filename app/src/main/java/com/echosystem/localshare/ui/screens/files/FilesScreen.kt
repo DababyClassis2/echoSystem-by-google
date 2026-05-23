@@ -2,6 +2,7 @@ package com.echosystem.localshare.ui.screens.files
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.echosystem.localshare.model.Device
 import com.echosystem.localshare.model.FileTransfer
 import com.echosystem.localshare.model.TransferStatus
 import com.echosystem.localshare.viewmodel.EchoViewModel
@@ -29,12 +31,14 @@ fun FilesScreen(viewModel: EchoViewModel) {
     val files by viewModel.browserFiles.collectAsState(initial = emptyList())
     val selectedFiles by viewModel.selectedFiles.collectAsState(initial = emptySet<File>())
     val transfers by viewModel.transferProgress.collectAsState(initial = emptyList())
+    val devices by viewModel.devices.collectAsState(initial = emptyList())
     
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     
     var showActionsSheet by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf<File?>(null) }
+    var showSendToDeviceDialog by remember { mutableStateOf(false) }
     
     val rootDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
 
@@ -118,7 +122,7 @@ fun FilesScreen(viewModel: EchoViewModel) {
                     showActionsSheet = false
                 },
                 onShare = {
-                    // Logic to trigger system share intent would go here
+                    showSendToDeviceDialog = true
                     showActionsSheet = false
                 },
                 onWebPreview = {
@@ -136,6 +140,18 @@ fun FilesScreen(viewModel: EchoViewModel) {
                     viewModel.renameFile(file, newName)
                     showRenameDialog = null
                     viewModel.clearSelection()
+                }
+            )
+        }
+
+        if (showSendToDeviceDialog) {
+            SendToDeviceDialog(
+                devices = devices,
+                onDismiss = { showSendToDeviceDialog = false },
+                onConfirm = { device ->
+                    viewModel.sendSelectedFilesToDevice(device)
+                    showSendToDeviceDialog = false
+                    scope.launch { snackbarHostState.showSnackbar("Init transmission to ${device.name}") }
                 }
             )
         }
@@ -306,6 +322,92 @@ fun RenameFileDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+fun SendToDeviceDialog(
+    devices: List<Device>,
+    onDismiss: () -> Unit,
+    onConfirm: (Device) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Mesh Beacon Node", fontWeight = FontWeight.Black) },
+        text = {
+            if (devices.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.SensorsOff,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "No active peer nodes found.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Ensure another device is visible on radar.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(devices) { device ->
+                        Card(
+                            onClick = { onConfirm(device) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Devices,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = device.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "IP: ${device.ip}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
         }
     )
 }

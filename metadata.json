@@ -1,5 +1,5 @@
 {
-  "name": "echoSystem v1.1.0",
+  "name": "echoSystem",
   "description": "Secure peer-to-peer file sharing and mesh networking for Android and Web. v1.1.0: Full system refinement and UI 2.0 alignment.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

@@ -537,6 +537,15 @@ class EchoViewModel @Inject constructor(
         _selectedFiles.value = emptySet()
     }
 
+    fun sendSelectedFilesToDevice(device: Device) {
+        val filesToSend = _selectedFiles.value.toList()
+        if (filesToSend.isEmpty()) return
+        
+        val uris = filesToSend.map { Uri.fromFile(it) }
+        sendMultipleFilesToDevice(device, uris)
+        clearSelection()
+    }
+
     fun deleteSelectedFiles() {
         viewModelScope.launch {
             _selectedFiles.value.forEach { file ->
