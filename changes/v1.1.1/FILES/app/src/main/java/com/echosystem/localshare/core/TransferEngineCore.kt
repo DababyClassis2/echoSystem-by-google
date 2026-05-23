@@ -35,9 +35,6 @@ class TransferEngineCore @Inject constructor(
     private val activeJobs = mutableMapOf<String, Job>()
     private val pausedTransfers = mutableSetOf<String>()
 
-    private val CHUNK_SIZE = 256 * 1024 // 256 KB
-    private val LARGE_FILE_THRESHOLD = 10 * 1024 * 1024 // 10 MB
-
     fun enqueueTransfer(
         transfer: FileTransfer, 
         uri: Uri?, 
@@ -60,9 +57,7 @@ class TransferEngineCore @Inject constructor(
 
         val job = scope.launch {
             try {
-                // SHA-256 Integrity Check (Brick 2)
                 val checksum = if (uri != null) calculateSha256(uri) else ""
-                
                 updateStatus(transfer.id, TransferStatus.TRANSFERRING)
                 
                 val startTime = System.currentTimeMillis()
@@ -102,11 +97,11 @@ class TransferEngineCore @Inject constructor(
                 if (isPaused(transfer.id)) {
                     updateStatus(transfer.id, TransferStatus.PAUSED)
                 } else {
-                    updateStatus(transfer.id, TransferStatus.FAILED, "Cancelled by user")
-                    eventBus.tryEmit(CoreEvent.TransferFailed(transfer.id, "User Cancellation"))
+                    updateStatus(transfer.id, TransferStatus.FAILED, "Cancelled")
+                    eventBus.tryEmit(CoreEvent.TransferFailed(transfer.id, "Cancelled"))
                 }
             } catch (t: Throwable) {
-                val cleanError = errorHandler.reportError(t, "Engine_Task_${transfer.id}")
+                val cleanError = errorHandler.reportError(t, "Engine_${transfer.id}")
                 updateStatus(transfer.id, TransferStatus.FAILED, cleanError)
                 eventBus.tryEmit(CoreEvent.TransferFailed(transfer.id, cleanError))
             } finally {
@@ -127,45 +122,21 @@ class TransferEngineCore @Inject constructor(
                 }
             }
             digest.digest().joinToString("") { "%02x".format(it) }
-        } catch (e: Exception) {
-            AppLogger.logEvent(tag, "Checksum calculation failed: ${e.message}")
-            ""
-        }
+        } catch (e: Exception) { "" }
     }
 
     private fun updateStatus(id: String, status: TransferStatus, error: String? = null) {
         _transferProgress.update { map ->
-            map[id]?.let {
-                map + (id to it.copy(status = status, errorMessage = error))
-            } ?: map
+            map[id]?.let { map + (id to it.copy(status = status, errorMessage = error)) } ?: map
         }
         _transferQueue.update { list ->
             list.map { if (it.id == id) it.copy(status = status) else it }
         }
     }
 
-    fun pauseTransfer(id: String) {
-        pausedTransfers.add(id)
-        activeJobs[id]?.cancel(CancellationException("Paused"))
-    }
-
     fun resumeTransfer(id: String, uri: Uri?, onExecute: suspend (FileTransfer, String, (Float, Long) -> Unit) -> Unit) {
         pausedTransfers.remove(id)
-        _transferQueue.value.find { it.id == id }?.let {
-            enqueueTransfer(it, uri, onExecute)
-        }
-    }
-
-    fun cancelTransfer(id: String) {
-        pausedTransfers.remove(id)
-        activeJobs[id]?.cancel()
-    }
-
-    fun prioritizeTransfer(id: String) {
-        _transferQueue.update { queue ->
-            val target = queue.find { it.id == id } ?: return@update queue
-            listOf(target) + queue.filter { it.id != id }
-        }
+        _transferQueue.value.find { it.id == id }?.let { enqueueTransfer(it, uri, onExecute) }
     }
 
     private fun isPaused(id: String) = pausedTransfers.contains(id)

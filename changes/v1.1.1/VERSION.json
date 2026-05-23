@@ -1,20 +1,8 @@
 {
   "version": "1.1.1",
-  "releaseType": "polish",
-  "backend": [
-    "Unified Connection Manager",
-    "Streaming Transfer Engine",
-    "Room Persistence Layer",
-    "RSA Secure Boring",
-    "FileSystem Extensions (REST)",
-    "Real-time WebSocket Events"
-  ],
-  "ui": [
-    "Tap-to-Preview Modals",
-    "Pulse Animation Transitions",
-    "Friendly Empty States",
-    "Nuanced Haptic Feedback",
-    "Constrained Desktop Layout",
-    "Strict Typography Scale"
-  ]
+  "build": "10110",
+  "releaseDate": "2026-05-23",
+  "type": "refinement",
+  "author": "echoSystem Engineering",
+  "status": "production-ready"
 }

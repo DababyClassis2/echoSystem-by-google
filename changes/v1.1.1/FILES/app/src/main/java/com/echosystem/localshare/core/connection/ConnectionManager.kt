@@ -6,15 +6,10 @@ import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.net.wifi.WifiManager
-import android.os.Build
+import androidx.core.content.ContextCompat
 import com.echosystem.localshare.core.NetworkMode
 import com.echosystem.localshare.logging.AppLogger
-import dagger.Module
-import dagger.Provides
-import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
-import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.net.Inet4Address
@@ -47,6 +42,15 @@ class ConnectionManager @Inject constructor(
     
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
+    private val _onlineDevices = MutableStateFlow<Set<String>>(emptySet())
+    val onlineDevices: StateFlow<Set<String>> = _onlineDevices.asStateFlow()
+
+    fun setDeviceOnline(deviceId: String, online: Boolean) {
+        _onlineDevices.update {
+            if (online) it + deviceId else it - deviceId
+        }
+    }
 
     private var healthCheckJob: Job? = null
     private var currentMode: NetworkMode = NetworkMode.LAN
@@ -108,12 +112,6 @@ class ConnectionManager @Inject constructor(
                 restrictions.add(Restriction.CELLULAR_ONLY)
             }
 
-            // Real-time hotspot SSID detection (Simplified)
-            var hotspotSsid: String? = null
-            if (currentMode == NetworkMode.HOTSPOT) {
-                // In actual deployment, we'd query the WifiManager reservation SSID
-            }
-
             _connectionState.value = ConnectionState.Connected(
                 mode = currentMode,
                 ip = ip,
@@ -121,7 +119,7 @@ class ConnectionManager @Inject constructor(
                 restrictions = restrictions
             )
             
-            AppLogger.logEvent(tag, "Refined Connection State: $currentMode | IP: $ip | Unrestricted: ${restrictions.isEmpty()}")
+            AppLogger.logEvent(tag, "Refined Connection State: $currentMode | IP: $ip")
         }
     }
 
@@ -138,13 +136,13 @@ class ConnectionManager @Inject constructor(
                         consecutiveFailures++
                         if (consecutiveFailures >= 2) {
                             _connectionState.value = status.copy(health = HealthStatus.DEGRADED)
-                            AppLogger.logEvent(tag, "Network Mesh node at ${status.ip} is reporting DEGRADED health.")
+                            AppLogger.logEvent(tag, "Network health DEGRADED.")
                         }
                     } else {
                         consecutiveFailures = 0
                         if (status.health != HealthStatus.HEALTHY) {
                             _connectionState.value = status.copy(health = HealthStatus.HEALTHY)
-                            AppLogger.logEvent(tag, "Network Mesh node health restored to HEALTHY.")
+                            AppLogger.logEvent(tag, "Network health restored.")
                         }
                     }
                 }
@@ -158,18 +156,5 @@ class ConnectionManager @Inject constructor(
         } catch (e: Exception) {
             false
         }
-    }
-}
-
-@Module
-@InstallIn(SingletonComponent::class)
-object ConnectionModule {
-    @Provides
-    @Singleton
-    fun provideConnectionManager(
-        @ApplicationContext context: Context,
-        scope: CoroutineScope
-    ): ConnectionManager {
-        return ConnectionManager(context, scope)
     }
 }

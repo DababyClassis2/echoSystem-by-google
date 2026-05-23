@@ -1,0 +1,19 @@
+--- app/src/main/java/com/echosystem/localshare/ui/screens/files/FilesScreen.kt (v1.1.0)
++++ app/src/main/java/com/echosystem/localshare/ui/screens/files/FilesScreen.kt (v1.1.1)
+@@ -332,7 +332,7 @@
+         )
+         Spacer(modifier = Modifier.height(16.dp))
+         Text(
+-            if (isRoot) "Storage Ready" else "Folder is empty",
++            if (isRoot) "Resonance Clear" else "Silent Void",
+             style = MaterialTheme.typography.displayLarge
+         )
+         Text(
+@@ -339,6 +339,6 @@
+-                "Your echoSystem storage is ready. Drop files here or tap Upload."
+-            } else {
+-                "This folder is empty. Tap + to add files."
++                "Your echoSystem storage is clean and ready. Share files to see them vibrate here."
++            } else {
++                "This path contains no fragments. Drop something in to start the sync."
+             },

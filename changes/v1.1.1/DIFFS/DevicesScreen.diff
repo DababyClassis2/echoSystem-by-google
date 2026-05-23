@@ -1,0 +1,13 @@
+--- app/src/main/java/com/echosystem/localshare/ui/screens/devices/DevicesScreen.kt (v1.1.0)
++++ app/src/main/java/com/echosystem/localshare/ui/screens/devices/DevicesScreen.kt (v1.1.1)
+@@ -282,11 +282,11 @@
+         )
+         Spacer(modifier = Modifier.height(16.dp))
+         Text(
+-            "No devices found.",
++            "Radar Silence",
+             style = MaterialTheme.typography.displayLarge
+         )
+         Text(
+-            "Make sure you’re on the same Wi‑Fi.",
++            "No nodes found in the echo registry. Ensure friends have the portal open or check your network frequency.",
