@@ -41,6 +41,7 @@ const COLORS = {
 
 async function initialize() {
     await checkAutoAuth();
+    setupWebSocket();
     lucide.createIcons();
 }
 
@@ -137,16 +138,25 @@ function updateUIPermissions() {
 
 async function loadContent() {
     try {
+        contentGrid.classList.add('opacity-0');
         const res = await fetch(`/web/files?path=${encodeURIComponent(currentPath)}`, {
             headers: { 'X-PIN': pairingPin, 'X-Device-Id': deviceId }
         });
         if (res.ok) {
-            fileLibrary = await res.json();
-            renderContent();
-            renderFolderTree();
-            updateBreadcrumb();
+            const data = await res.json();
+            fileLibrary = data.items || [];
+            setTimeout(() => {
+                renderContent();
+                renderFolderTree();
+                updateBreadcrumb();
+            }, 200);
+        } else {
+            contentGrid.classList.remove('opacity-0');
         }
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+        contentGrid.classList.remove('opacity-0');
+        console.error(e); 
+    }
 }
 
 function renderContent() {
@@ -214,6 +224,9 @@ function renderContent() {
         contentGrid.appendChild(card);
     });
     lucide.createIcons();
+    requestAnimationFrame(() => {
+        contentGrid.classList.remove('opacity-0');
+    });
 }
 
 function renderFolderTree() {
@@ -260,11 +273,13 @@ function navigate(dir) {
     loadContent();
 }
 
+// Set explicit navigation path
 function setPath(path) {
     currentPath = path;
     loadContent();
 }
 
+// Clear folder navigation pointers
 function resetPath() {
     currentPath = '';
     loadContent();
@@ -339,7 +354,9 @@ function closePreview() {
     const modal = document.getElementById('previewModal');
     const content = document.getElementById('previewContent');
     modal.classList.add('opacity-0', 'pointer-events-none');
-    content.innerHTML = ''; // Stop any playing media
+    setTimeout(() => {
+        content.innerHTML = ''; // Stop any playing media
+    }, 300);
 }
 
 async function deleteObject(name) {
@@ -465,8 +482,9 @@ document.getElementById('fileSelector').onchange = (e) => {
     files.forEach(syncFile);
 };
 
+// Queue handling elements safely
 function syncFile(file) {
-    queueSection.classList.remove('hidden');
+    queueSection.classList.remove('queue-hidden');
     const id = 'sync-' + Math.random().toString(36).substring(2, 7);
     const row = document.createElement('div');
     row.id = id;
@@ -513,7 +531,7 @@ function syncFile(file) {
             setTimeout(() => {
                 document.getElementById(id).remove();
                 updateQueueCount();
-                if (!queueList.children.length) queueSection.classList.add('hidden');
+                if (!queueList.children.length) queueSection.classList.add('queue-hidden');
             }, 3000);
             loadContent();
         }
@@ -529,5 +547,61 @@ document.getElementById('searchInput').oninput = (e) => {
     searchQuery = e.target.value;
     renderContent();
 };
+
+async function createFolder() {
+    const name = prompt("Enter folder name:");
+    if (!name) return;
+    const folderPath = currentPath ? `${currentPath}/${name}` : name;
+    try {
+        const res = await fetch('/web/mkdir', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-PIN': pairingPin,
+                'X-Device-Id': deviceId
+            },
+            body: JSON.stringify({ path: folderPath })
+        });
+        if (res.ok) {
+            loadContent();
+        } else {
+            alert("Failed to create folder. Make sure you have upload permission.");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Network Error");
+    }
+}
+
+let ws = null;
+function setupWebSocket() {
+    if (ws) {
+        try { ws.close(); } catch(e){}
+        ws = null;
+    }
+    const loc = window.location;
+    const wsProto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProto}//${loc.host}/events`;
+    ws = new WebSocket(wsUrl);
+
+    ws.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'file_changed' || msg.type === 'transfer_completed' || msg.type === 'transfer_started') {
+                loadContent();
+            } else if (msg.type === 'device_online' || msg.type === 'device_offline') {
+                if (!managementSection.classList.contains('pointer-events-none')) {
+                    loadRegistry();
+                }
+            }
+        } catch (e) {
+            console.error("WS error: ", e);
+        }
+    };
+
+    ws.onclose = () => {
+        setTimeout(setupWebSocket, 5000);
+    };
+}
 
 window.onload = initialize;

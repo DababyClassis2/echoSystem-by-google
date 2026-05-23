@@ -138,17 +138,25 @@ function updateUIPermissions() {
 
 async function loadContent() {
     try {
+        contentGrid.classList.add('opacity-0');
         const res = await fetch(`/web/files?path=${encodeURIComponent(currentPath)}`, {
             headers: { 'X-PIN': pairingPin, 'X-Device-Id': deviceId }
         });
         if (res.ok) {
             const data = await res.json();
             fileLibrary = data.items || [];
-            renderContent();
-            renderFolderTree();
-            updateBreadcrumb();
+            setTimeout(() => {
+                renderContent();
+                renderFolderTree();
+                updateBreadcrumb();
+            }, 200);
+        } else {
+            contentGrid.classList.remove('opacity-0');
         }
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+        contentGrid.classList.remove('opacity-0');
+        console.error(e); 
+    }
 }
 
 function renderContent() {
@@ -216,6 +224,9 @@ function renderContent() {
         contentGrid.appendChild(card);
     });
     lucide.createIcons();
+    requestAnimationFrame(() => {
+        contentGrid.classList.remove('opacity-0');
+    });
 }
 
 function renderFolderTree() {
@@ -341,7 +352,9 @@ function closePreview() {
     const modal = document.getElementById('previewModal');
     const content = document.getElementById('previewContent');
     modal.classList.add('opacity-0', 'pointer-events-none');
-    content.innerHTML = ''; // Stop any playing media
+    setTimeout(() => {
+        content.innerHTML = ''; // Stop any playing media
+    }, 300);
 }
 
 async function deleteObject(name) {
@@ -468,7 +481,7 @@ document.getElementById('fileSelector').onchange = (e) => {
 };
 
 function syncFile(file) {
-    queueSection.classList.remove('hidden');
+    queueSection.classList.remove('queue-hidden');
     const id = 'sync-' + Math.random().toString(36).substring(2, 7);
     const row = document.createElement('div');
     row.id = id;
@@ -515,7 +528,7 @@ function syncFile(file) {
             setTimeout(() => {
                 document.getElementById(id).remove();
                 updateQueueCount();
-                if (!queueList.children.length) queueSection.classList.add('hidden');
+                if (!queueList.children.length) queueSection.classList.add('queue-hidden');
             }, 3000);
             loadContent();
         }

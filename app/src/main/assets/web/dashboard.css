@@ -76,3 +76,26 @@ body {
 #previewModal.opacity-0 {
     transform: scale(0.95);
 }
+
+.content-fade {
+    transition: opacity 200ms ease-in-out;
+}
+
+#queueSection {
+    transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms cubic-bezier(0.16, 1, 0.3, 1), padding 300ms cubic-bezier(0.16, 1, 0.3, 1), margin 300ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translateY(0);
+    opacity: 1;
+}
+
+#queueSection.queue-hidden {
+    transform: translateY(30px);
+    opacity: 0;
+    pointer-events: none;
+    height: 0;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    overflow: hidden;
+    border-color: transparent !important;
+}

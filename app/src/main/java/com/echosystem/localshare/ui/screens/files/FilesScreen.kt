@@ -1,6 +1,7 @@
 package com.echosystem.localshare.ui.screens.files
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.echosystem.localshare.model.Device
@@ -52,7 +54,11 @@ fun FilesScreen(viewModel: EchoViewModel) {
                     rootDir = rootDir,
                     onNavigate = { viewModel.navigateTo(it) }
                 )
-                if (selectedFiles.isNotEmpty()) {
+                AnimatedVisibility(
+                    visible = selectedFiles.isNotEmpty(),
+                    enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
+                ) {
                     SelectionToolbar(
                         count = selectedFiles.size,
                         onClear = { viewModel.clearSelection() },
@@ -208,8 +214,8 @@ fun SelectionToolbar(
 fun ActiveTransfersSection(transfers: List<FileTransfer>) {
     AnimatedVisibility(
         visible = transfers.isNotEmpty(),
-        enter = expandVertically() + fadeIn(),
-        exit = shrinkVertically() + fadeOut()
+        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
     ) {
         Column(
             modifier = Modifier
@@ -244,6 +250,17 @@ fun ActiveTransfersSection(transfers: List<FileTransfer>) {
 
 @Composable
 fun TransferProgressRow(transfer: FileTransfer) {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -264,7 +281,11 @@ fun TransferProgressRow(transfer: FileTransfer) {
         Spacer(modifier = Modifier.height(4.dp))
         LinearProgressIndicator(
             progress = { transfer.progress },
-            modifier = Modifier.fillMaxWidth().height(4.dp).background(Color.Transparent),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .background(Color.Transparent)
+                .graphicsLayer { alpha = pulseAlpha },
             trackColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.1f),
             color = MaterialTheme.colorScheme.primary
         )
