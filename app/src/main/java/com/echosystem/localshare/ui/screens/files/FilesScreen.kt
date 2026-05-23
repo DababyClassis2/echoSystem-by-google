@@ -88,7 +88,7 @@ fun FilesScreen(viewModel: EchoViewModel) {
             ActiveTransfersSection(transfers = transfers.filter { it.status == TransferStatus.ONGOING })
 
             if (files.isEmpty()) {
-                EmptyFilesState()
+                EmptyFilesState(isRoot = (currentDir.absolutePath == rootDir.absolutePath))
             } else {
                 FileGrid(
                     files = files,
@@ -293,7 +293,7 @@ fun TransferProgressRow(transfer: FileTransfer) {
 }
 
 @Composable
-fun EmptyFilesState() {
+fun EmptyFilesState(isRoot: Boolean) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -302,19 +302,23 @@ fun EmptyFilesState() {
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            Icons.Default.FolderOpen,
+            Icons.Default.CreateNewFolder,
             contentDescription = null,
             modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.outline
+            tint = MaterialTheme.colorScheme.primary
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            "Null Directory",
+            if (isRoot) "Storage Ready" else "Folder is empty",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Black
         )
         Text(
-            "This sector of the filesystem is currently devoid of resources.",
+            if (isRoot) {
+                "Your echoSystem storage is ready. Drop files here or tap Upload."
+            } else {
+                "This folder is empty. Tap + to add files."
+            },
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

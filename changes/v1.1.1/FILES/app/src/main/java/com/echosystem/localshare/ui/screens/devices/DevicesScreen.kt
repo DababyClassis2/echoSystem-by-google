@@ -14,6 +14,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.echosystem.localshare.model.Device
@@ -135,7 +136,7 @@ fun DevicesScreen(viewModel: EchoViewModel) {
                 ScanningHeader(nsdState = nsdState)
 
                 if (devices.isEmpty()) {
-                    EmptyDevicesState()
+                    EmptyDevicesState(onScanAgain = { viewModel.startDiscovery() })
                 } else {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
@@ -258,7 +259,7 @@ fun ScanningHeader(nsdState: NsdState) {
 }
 
 @Composable
-fun EmptyDevicesState() {
+fun EmptyDevicesState(onScanAgain: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -267,24 +268,36 @@ fun EmptyDevicesState() {
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            Icons.Default.SensorsOff,
+            Icons.Default.Radar,
             contentDescription = null,
             modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.outline
+            tint = MaterialTheme.colorScheme.primary
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            "Isolated Node",
+            "No devices found.",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Black
         )
         Text(
-            "No devices found on the local mesh. Ensure other nodes are discoverable and on the same Wi-Fi.",
+            "Make sure you’re on the same Wi‑Fi.",
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 8.dp)
+            modifier = Modifier.padding(top = 8.dp, bottom = 24.dp)
         )
+        Button(
+            onClick = onScanAgain,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ),
+            modifier = Modifier.testTag("scan_again_btn")
+        ) {
+            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Scan Again")
+        }
     }
 }
 

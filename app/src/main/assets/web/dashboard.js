@@ -171,12 +171,18 @@ function renderContent() {
 
     if (filtered.length === 0) {
         contentGrid.innerHTML = `
-            <div class="col-span-full py-32 text-center opacity-30 flex flex-col items-center gap-4">
-                <i data-lucide="ghost" class="w-16 h-16"></i>
-                <p class="text-xs font-black uppercase tracking-[0.3em]">No fragments detected</p>
+            <div class="col-span-full py-24 px-6 text-center flex flex-col items-center justify-center gap-4 max-w-md mx-auto">
+                <div class="w-16 h-16 bg-indigo-600/10 text-indigo-500 border border-indigo-500/10 rounded-2xl flex items-center justify-center mb-2">
+                    <i data-lucide="cloud-upload" class="w-8 h-8"></i>
+                </div>
+                <h3 class="text-lg font-bold text-slate-200">Nothing here yet</h3>
+                <p class="text-sm text-slate-400 leading-relaxed">Drag files or use Upload to start sharing.</p>
             </div>
         `;
         lucide.createIcons();
+        requestAnimationFrame(() => {
+            contentGrid.classList.remove('opacity-0');
+        });
         return;
     }
 
