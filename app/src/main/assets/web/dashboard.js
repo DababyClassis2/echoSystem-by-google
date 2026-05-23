@@ -5,6 +5,14 @@ let currentPath = [];
 let socket = null;
 let currentCategory = 'all';
 
+// Auth State
+let pairingPin = localStorage.getItem('pairingPin') || '';
+let deviceId = localStorage.getItem('deviceId') || '';
+if (!deviceId) {
+    deviceId = 'web-' + Math.random().toString(36).substring(2, 10);
+    localStorage.setItem('deviceId', deviceId);
+}
+
 // Component mapping
 const elements = {
     grid: document.getElementById('file-grid'),
@@ -23,17 +31,50 @@ const elements = {
     toast: document.getElementById('toast'),
     queueList: document.getElementById('queue-list'),
     queueContainer: document.getElementById('transfer-queue'),
-    queueCount: document.getElementById('queue-count')
+    queueCount: document.getElementById('queue-count'),
+    authOverlay: document.getElementById('auth-overlay'),
+    authForm: document.getElementById('auth-form'),
+    pinInput: document.getElementById('pin-input'),
+    authError: document.getElementById('auth-error')
 };
 
 // --- CORE LOGIC ---
 
+async function authFetch(url, options = {}) {
+    options.headers = {
+        ...(options.headers || {}),
+        'X-PIN': pairingPin,
+        'X-Device-Id': deviceId
+    };
+    
+    try {
+        const response = await fetch(url, options);
+        if (response.status === 401 || response.status === 403) {
+            showAuth();
+        }
+        return response;
+    } catch (err) {
+        throw err;
+    }
+}
+
+function showAuth() {
+    elements.authOverlay.classList.remove('hidden');
+    elements.authOverlay.classList.add('flex');
+}
+
+function hideAuth() {
+    elements.authOverlay.classList.add('hidden');
+    elements.authOverlay.classList.remove('flex');
+}
+
 async function fetchFiles(path = []) {
     const pathStr = path.join('/');
     try {
-        const response = await fetch(`/api/files-tree?path=${encodeURIComponent(pathStr)}`);
-        const files = await response.json();
-        renderGrid(files);
+        const response = await authFetch(`/web/files?path=${encodeURIComponent(pathStr)}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        renderGrid(data.items);
         updateBreadcrumbs();
     } catch (err) {
         showToast('Error', 'Registry Sync Failed', true);
@@ -98,7 +139,7 @@ function getFileIcon(file) {
     if (file.isDirectory) return `<i data-lucide="folder" class="w-10 h-10 text-resonance-accent/40"></i>`;
     
     if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) {
-        return `<img src="/api/files/download?path=${encodeURIComponent([...currentPath, file.name].join('/'))}" class="w-full h-full object-contain" loading="lazy">`;
+        return `<img src="/web/download?fileName=${encodeURIComponent(file.name)}&path=${encodeURIComponent(currentPath.join('/'))}&pin=${pairingPin}&deviceId=${deviceId}" class="w-full h-full object-contain" loading="lazy">`;
     }
     
     if (['mp4', 'webm', 'mov'].includes(ext)) return `<i data-lucide="play-circle" class="w-10 h-10 text-blue-400"></i>`;
@@ -111,8 +152,8 @@ function getFileIcon(file) {
 // --- PREVIEW LOGIC (BRICK 1) ---
 
 function openPreview(file) {
-    const path = [...currentPath, file.name].join('/');
-    const url = `/api/files/download?path=${encodeURIComponent(path)}`;
+    const path = currentPath.join('/');
+    const url = `/web/download?fileName=${encodeURIComponent(file.name)}&path=${encodeURIComponent(path)}&pin=${pairingPin}&deviceId=${deviceId}`;
     const ext = file.name.split('.').pop().toLowerCase();
 
     elements.modalTitle.innerText = file.name;
@@ -280,10 +321,10 @@ elements.fileInput.onchange = async () => {
     for (const file of files) {
         const formData = new FormData();
         formData.append('file', file);
-        const pathPrefix = currentPath.length > 0 ? currentPath.join('/') + '/' : '';
+        const pathPrefix = currentPath.length > 0 ? currentPath.join('/') : '';
         
         try {
-            await fetch(`/api/files/upload?path=${encodeURIComponent(pathPrefix + file.name)}`, {
+            await authFetch(`/web/upload?path=${encodeURIComponent(pathPrefix)}`, {
                 method: 'POST',
                 body: formData
             });
@@ -293,6 +334,35 @@ elements.fileInput.onchange = async () => {
         }
     }
     elements.fileInput.value = '';
+};
+
+// --- AUTH LOGIC ---
+
+elements.authForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const pin = elements.pinInput.value;
+    elements.authError.classList.add('hidden');
+    
+    try {
+        const res = await fetch('/pairing/request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId, pin, deviceName: 'Web Portal' })
+        });
+
+        if (res.ok) {
+            pairingPin = pin;
+            localStorage.setItem('pairingPin', pin);
+            hideAuth();
+            fetchFiles(currentPath);
+        } else {
+            elements.authError.innerText = "Link Refused. Check PIN.";
+            elements.authError.classList.remove('hidden');
+        }
+    } catch (err) {
+        elements.authError.innerText = "Mesh Offline.";
+        elements.authError.classList.remove('hidden');
+    }
 };
 
 elements.closePreview.onclick = closePreview;

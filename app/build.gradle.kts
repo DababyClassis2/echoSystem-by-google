@@ -166,27 +166,12 @@ val targetWebDir = layout.projectDirectory.dir("src/main/assets/web").asFile
 
 tasks.register("downloadWebAssets") {
   val targetDir = targetWebDir
-  inputs.property("url_tailwind", "https://cdn.tailwindcss.com")
   inputs.property("url_lucide", "https://unpkg.com/lucide@0.453.0/dist/umd/lucide.min.js")
   outputs.dir(targetDir)
 
   doLast {
     if (!targetDir.exists()) {
       targetDir.mkdirs()
-    }
-    
-    val tailwindFile = File(targetDir, "tailwind.js")
-    if (!tailwindFile.exists()) {
-      println("Downloading tailwind.js for offline gateway capabilities...")
-      try {
-        URI.create("https://cdn.tailwindcss.com").toURL().openStream().use { input ->
-          tailwindFile.outputStream().use { output ->
-            input.copyTo(output)
-          }
-        }
-      } catch (e: Exception) {
-        println("Failed to download Tailwind: ${e.message}")
-      }
     }
     
     val lucideFile = File(targetDir, "lucide.min.js")

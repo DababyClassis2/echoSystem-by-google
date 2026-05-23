@@ -13,6 +13,11 @@ This release consolidates the "Registry" backend with a refined Material 3 UI/UX
 - /core/* (Connection, Engine, Recovery)
 - /ui/screens/* (Files, History, Devices)
 - /assets/web/dashboard.html
+- /assets/web/dashboard.js
+- /assets/web/dashboard.css
+- /assets/web/tailwind.min.css (Production CSS Replacement)
+- /assets/web/favicon.ico
+- /server/routes/FileRoutes.kt (Updated Asset Serving)
 - /util/HapticUtil.kt
 - /viewmodel/EchoViewModel.kt
 

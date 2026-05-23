@@ -81,12 +81,13 @@ fun Route.fileRoutes(
     // Serve Web static assets (Local JS & CSS) to enable 100% offline usage
     get("/{filename}") {
         val filename = call.parameters["filename"] ?: ""
-        val allowedFiles = listOf("dashboard.js", "dashboard.css", "tailwind.js", "lucide.min.js")
+        val allowedFiles = listOf("dashboard.js", "dashboard.css", "tailwind.min.css", "lucide.min.js", "favicon.ico")
         if (filename in allowedFiles) {
             try {
                 val contentType = when {
                     filename.endsWith(".js") -> ContentType.Application.JavaScript
                     filename.endsWith(".css") -> ContentType.Text.CSS
+                    filename.endsWith(".ico") -> ContentType.Image.XIcon
                     else -> ContentType.Text.Plain
                 }
                 val contentBytes = context.assets.open("web/$filename").use { it.readBytes() }
