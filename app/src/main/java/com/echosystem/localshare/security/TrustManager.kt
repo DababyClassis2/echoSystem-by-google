@@ -141,6 +141,15 @@ class TrustManager @Inject constructor(
 
     fun getPermissions(deviceId: String): Set<DevicePermission> {
         val permString = prefs.getString("perms_$deviceId", "") ?: ""
+        if (permString.isEmpty() && isDeviceTrusted(deviceId)) {
+            // Default permissions for trusted legacy devices
+            return setOf(
+                DevicePermission.BROWSE_FILES,
+                DevicePermission.DOWNLOAD_FILES,
+                DevicePermission.UPLOAD_FILES,
+                DevicePermission.DELETE_FILES
+            )
+        }
         return permString.split(",")
             .filter { it.isNotEmpty() }
             .mapNotNull { 
