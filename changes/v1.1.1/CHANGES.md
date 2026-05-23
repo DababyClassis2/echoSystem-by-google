@@ -37,8 +37,11 @@ This update represents a complete stability, security, validation, and performan
   - `transfer_started`, `transfer_completed`, and `transfer_failed`
 - **Frontend Real-time Sync**: Updated Web `dashboard.html` with a New Folder action and updated `dashboard.js` with WebSocket-driven auto-mesh reload and responsive progress tracking.
 
-### 6. Background Network Service Discovery (NSD Helper Refinements)
-- **Corrected Identifier**: Registered and searched on standard multicast domain type `_localshare._tcp.` (replacing `_echoshare._tcp.`).
-- **Rich Metadata Declarations**: Service registration now injects TXT records: `name` (android.os.Build.MODEL), unique `deviceId`, `fingerprint`, `version`, and `capabilities` map.
-- **Graceful Offlining via Timer**: Implemented a thread-safe 30-second delay on `onServiceLost` using concurrent coroutine delay clocks. If service returns within 30s, the timer is cancelled and the node remains online; otherwise, it is safely demoted offline and events are sent.
-- **File System Watch**: Built multiple concurrent `FileObserver` watches inside the persistent `EchoCoreService` lifecycle mapping to `Received`, `Sent`, and `Shared` storage folders respectively, automatically emitting JSON events to active WebSocket nodes.
+### 7. UX Refinement: Friendly Empty States
+- **Emotional Language**: Rewrote cold, technical UI messages (e.g., "Isolated Node", "Null Directory") with friendly, encouraging prose.
+- **Radar Screen (No Devices)**: Implemented `EmptyDevicesState` with a Radar icon and a "Scan Again" button to encourage discovery.
+- **Storage Screen (Empty Folder)**: Dynamically differentiated between root and subfolder empty states.
+  - Root: "Your echoSystem storage is ready. Drop files here or tap Upload."
+  - Subfolder: "This folder is empty. Tap + to add files."
+- **History Screen**: Added a clear, centered "No transfers yet" state with a descriptive call to action.
+- **Web Dashboard**: Updated the file grid with a centered "Nothing here yet" state featuring a `cloud-upload` icon and Indonesian Indo-Mesh indigo aesthetic.
