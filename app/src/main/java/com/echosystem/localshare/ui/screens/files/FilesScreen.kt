@@ -39,6 +39,7 @@ fun FilesScreen(viewModel: EchoViewModel) {
     var showActionsSheet by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf<File?>(null) }
     var showSendToDeviceDialog by remember { mutableStateOf(false) }
+    var showPreviewOverlay by remember { mutableStateOf<File?>(null) }
     
     val rootDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
 
@@ -92,8 +93,7 @@ fun FilesScreen(viewModel: EchoViewModel) {
                         } else if (file.isDirectory) {
                             viewModel.navigateTo(file)
                         } else {
-                            // Single click without selection could open preview
-                            // For UI 2.0 we'll favor long-press for multi-select
+                            showPreviewOverlay = file
                         }
                     },
                     onFileLongClick = { file ->
@@ -154,6 +154,10 @@ fun FilesScreen(viewModel: EchoViewModel) {
                     scope.launch { snackbarHostState.showSnackbar("Init transmission to ${device.name}") }
                 }
             )
+        }
+
+        showPreviewOverlay?.let { file ->
+            PreviewOverlay(file = file, onDismiss = { showPreviewOverlay = null })
         }
     }
 }

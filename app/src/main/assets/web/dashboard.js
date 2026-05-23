@@ -172,8 +172,15 @@ function renderContent() {
 
     filtered.forEach((item, idx) => {
         const card = document.createElement('div');
-        card.className = "file-card glass rounded-3xl p-5 flex flex-col gap-4 animate-slide";
+        card.className = "file-card glass rounded-3xl p-5 flex flex-col gap-4 animate-slide cursor-pointer";
         card.style.animationDelay = `${idx * 20}ms`;
+        card.onclick = (e) => {
+            // Only trigger if we didn't click a button specifically
+            if(!e.target.closest('button')) {
+                if(item.isDirectory) navigate(item.name);
+                else openPreview(item);
+            }
+        };
 
         const icon = ICONS[item.type] || 'file';
         const colorClass = COLORS[item.type] || COLORS.other;
@@ -188,20 +195,20 @@ function renderContent() {
                 </div>
                 <div class="flex gap-1">
                     ${canDownload ? `
-                         <button onclick="downloadFile('${item.name}')" class="p-2 text-slate-500 hover:text-indigo-400 transition-colors">
+                         <button onclick="event.stopPropagation(); downloadFile('${item.name}')" class="p-2 text-slate-500 hover:text-indigo-400 transition-colors">
                             <i data-lucide="download" class="w-4 h-4"></i>
                         </button>
                     ` : ''}
                     ${canDelete ? `
-                        <button onclick="deleteObject('${item.name}')" class="p-2 text-slate-500 hover:text-red-400 transition-colors">
+                        <button onclick="event.stopPropagation(); deleteObject('${item.name}')" class="p-2 text-slate-500 hover:text-red-400 transition-colors">
                             <i data-lucide="trash-2" class="w-4 h-4"></i>
                         </button>
                     ` : ''}
                 </div>
             </div>
             <div class="min-w-0">
-                <h4 class="font-bold text-sm truncate leading-tight mb-1 cursor-pointer" onclick="${item.isDirectory ? `navigate('${item.name}')` : ''}">${item.name}</h4>
-                <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest">${item.isDirectory ? 'Directory' : `${item.formattedSize} • ${item.extension}`}</p>
+                <h4 class="font-bold text-sm truncate leading-tight mb-1">${item.name}</h4>
+                <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest">${item.isDirectory ? 'Directory' : `${item.formattedSize} • ${item.extension.toUpperCase()}`}</p>
             </div>
         `;
         contentGrid.appendChild(card);
@@ -264,8 +271,75 @@ function resetPath() {
 }
 
 function downloadFile(name) {
-    const url = `/web/download?fileName=${encodeURIComponent(name)}&path=${encodeURIComponent(currentPath)}&pin=${pairingPin}&deviceId=${deviceId}`;
+    const url = getFileUrl(name);
     window.location.href = url;
+}
+
+function getFileUrl(name) {
+    return `/web/download?fileName=${encodeURIComponent(name)}&path=${encodeURIComponent(currentPath)}&pin=${pairingPin}&deviceId=${deviceId}`;
+}
+
+async function openPreview(item) {
+    const modal = document.getElementById('previewModal');
+    const title = document.getElementById('previewTitle');
+    const meta = document.getElementById('previewMeta');
+    const content = document.getElementById('previewContent');
+    const icon = document.getElementById('previewIcon');
+    const dlBtn = document.getElementById('previewDownloadBtn');
+
+    title.textContent = item.name;
+    meta.textContent = `${item.formattedSize} • ${item.extension.toUpperCase()}`;
+    icon.className = `w-10 h-10 rounded-xl flex items-center justify-center ${COLORS[item.type] || COLORS.other}`;
+    icon.innerHTML = `<i data-lucide="${ICONS[item.type] || 'file'}" class="w-5 h-5"></i>`;
+    dlBtn.onclick = () => downloadFile(item.name);
+
+    content.innerHTML = '<i data-lucide="loader-2" class="w-12 h-12 animate-spin opacity-20"></i>';
+    lucide.createIcons();
+
+    modal.classList.remove('opacity-0', 'pointer-events-none');
+    
+    const fileUrl = getFileUrl(item.name);
+
+    if (item.type === 'image') {
+        content.innerHTML = `<img src="${fileUrl}" class="max-w-full max-h-full object-contain shadow-2xl rounded-lg animate-in fade-in duration-500">`;
+    } else if (item.type === 'video') {
+        content.innerHTML = `<video src="${fileUrl}" controls autoplay muted class="max-w-full max-h-full rounded-lg shadow-2xl"></video>`;
+    } else if (item.type === 'music') {
+        content.innerHTML = `
+            <div class="text-center">
+                <i data-lucide="music" class="w-32 h-32 text-indigo-500/20 mb-8 mx-auto"></i>
+                <audio src="${fileUrl}" controls autoplay class="w-80 md:w-96"></audio>
+            </div>
+        `;
+    } else if (item.type === 'document' && ['txt', 'log', 'json', 'xml', 'md', 'js', 'css', 'html'].includes(item.extension)) {
+        try {
+            const res = await fetch(fileUrl, { headers: { 'X-PIN': pairingPin, 'X-Device-Id': deviceId } });
+            const text = await res.text();
+            content.innerHTML = `
+                <div class="w-full h-full glass border border-white/5 rounded-3xl p-8 overflow-auto sidebar-scroller">
+                    <pre class="text-xs font-mono text-slate-300 leading-relaxed">${text.substring(0, 50000).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                </div>
+            `;
+        } catch (e) {
+            content.innerHTML = `<p class="text-xs font-bold uppercase tracking-widest text-red-400">Failed to stream resource data</p>`;
+        }
+    } else {
+        content.innerHTML = `
+            <div class="text-center opacity-40">
+                <i data-lucide="eye-off" class="w-20 h-20 mb-4 mx-auto text-slate-600"></i>
+                <p class="text-xs font-black uppercase tracking-[0.3em]">No Visual Stream Available</p>
+                <p class="text-[10px] font-bold mt-2 lowercase text-slate-500">${item.extension.toUpperCase()} Format</p>
+            </div>
+        `;
+    }
+    lucide.createIcons();
+}
+
+function closePreview() {
+    const modal = document.getElementById('previewModal');
+    const content = document.getElementById('previewContent');
+    modal.classList.add('opacity-0', 'pointer-events-none');
+    content.innerHTML = ''; // Stop any playing media
 }
 
 async function deleteObject(name) {

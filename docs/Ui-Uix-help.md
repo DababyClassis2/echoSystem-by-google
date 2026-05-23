@@ -80,9 +80,13 @@ The web dashboard is a single-page application built with **Tailwind CSS** and *
 
 ---
 
-## 5. Identified UX Pain Points (v1.1.0)
-- **Navigation Jarring**: On mobile, the Selection Toolbar for files overlays the primary TopAppBar, which can feel abrupt.
-- **Empty States**: Some screens use slightly clinical language ("Isolated Node", "Null Directory") which may be too technical for casual users.
-- **Haptic Feedback**: Currently minimal; adding more distinct vibrations for "Success" vs. "Error" pairing would improve "perceived security."
-- **File Previews**: Tapping a file in the grid currently does nothing; it requires a long-press for actions. A "Quick Look" feature is missing.
-- **Manual Refresh**: Users must often manually hit the FAB to update discovery or file lists.
+## 5. Visual Evolution (v1.1.1)
+- **Quick Look Integration**: Implemented a full-screen `PreviewOverlay` on mobile and `#previewModal` on web. 
+  - Users can now single-tap any file to enter a visually immersive preview mode (Images, Video, Audio, Text).
+  - This resolves the primary UX gap identified in v1.1.0 where single-taps were unresponsive.
+
+## 6. Known UX Constraints (Pending)
+- **Navigation Jarring**: On mobile, the Selection Toolbar for files overlays the primary TopAppBar.
+- **Empty States**: Some screens use slightly clinical language ("Isolated Node", "Null Directory").
+- **Haptic Feedback**: Minimal tactile response for security actions.
+- **Manual Refresh**: Frequency of manual refresh requirements for discovery lists.
