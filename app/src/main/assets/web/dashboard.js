@@ -41,6 +41,7 @@ const COLORS = {
 
 async function initialize() {
     await checkAutoAuth();
+    setupWebSocket();
     lucide.createIcons();
 }
 
@@ -141,7 +142,8 @@ async function loadContent() {
             headers: { 'X-PIN': pairingPin, 'X-Device-Id': deviceId }
         });
         if (res.ok) {
-            fileLibrary = await res.json();
+            const data = await res.json();
+            fileLibrary = data.items || [];
             renderContent();
             renderFolderTree();
             updateBreadcrumb();
@@ -529,5 +531,61 @@ document.getElementById('searchInput').oninput = (e) => {
     searchQuery = e.target.value;
     renderContent();
 };
+
+async function createFolder() {
+    const name = prompt("Enter folder name:");
+    if (!name) return;
+    const folderPath = currentPath ? `${currentPath}/${name}` : name;
+    try {
+        const res = await fetch('/web/mkdir', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-PIN': pairingPin,
+                'X-Device-Id': deviceId
+            },
+            body: JSON.stringify({ path: folderPath })
+        });
+        if (res.ok) {
+            loadContent();
+        } else {
+            alert("Failed to create folder. Make sure you have upload permission.");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Network Error");
+    }
+}
+
+let ws = null;
+function setupWebSocket() {
+    if (ws) {
+        try { ws.close(); } catch(e){}
+        ws = null;
+    }
+    const loc = window.location;
+    const wsProto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProto}//${loc.host}/events`;
+    ws = new WebSocket(wsUrl);
+
+    ws.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'file_changed' || msg.type === 'transfer_completed' || msg.type === 'transfer_started') {
+                loadContent();
+            } else if (msg.type === 'device_online' || msg.type === 'device_offline') {
+                if (!managementSection.classList.contains('pointer-events-none')) {
+                    loadRegistry();
+                }
+            }
+        } catch (e) {
+            console.error("WS error: ", e);
+        }
+    };
+
+    ws.onclose = () => {
+        setTimeout(setupWebSocket, 5000);
+    };
+}
 
 window.onload = initialize;

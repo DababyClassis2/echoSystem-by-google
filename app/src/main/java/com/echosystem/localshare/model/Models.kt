@@ -46,6 +46,15 @@ sealed class ServerEvent {
     
     @Serializable
     data class TransferFailed(val fileId: String, val error: String) : ServerEvent()
+
+    @Serializable
+    data class DeviceOnline(val deviceId: String, val ip: String) : ServerEvent()
+
+    @Serializable
+    data class DeviceOffline(val deviceId: String) : ServerEvent()
+
+    @Serializable
+    data class FileChanged(val event: String, val path: String) : ServerEvent()
 }
 
 @Serializable

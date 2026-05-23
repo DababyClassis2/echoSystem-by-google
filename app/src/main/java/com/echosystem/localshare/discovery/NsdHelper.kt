@@ -6,8 +6,13 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.util.Log
+import com.echosystem.localshare.database.DeviceEntity
 import com.echosystem.localshare.model.DeviceCandidate
 import com.echosystem.localshare.model.NsdState
+import com.echosystem.localshare.model.ServerEvent
+import com.echosystem.localshare.repository.DeviceRepository
+import com.echosystem.localshare.core.connection.ConnectionManager
+import com.echosystem.localshare.server.ServerEventBus
 import com.echosystem.localshare.service.EchoCoreService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
@@ -16,18 +21,22 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class NsdHelper @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val deviceRepository: DeviceRepository,
+    private val connectionManager: ConnectionManager,
+    private val serverEventBus: ServerEventBus
 ) {
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
     private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     
-    private val serviceType = "_echoshare._tcp."
+    private val serviceType = "_localshare._tcp."
     private val serviceName = "EchoShare_${android.os.Build.MODEL.replace(" ", "_")}"
     
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -41,6 +50,9 @@ class NsdHelper @Inject constructor(
 
     private var retryCount = 0
     private val MAX_RETRIES = 5
+
+    private val serviceNameToDeviceId = ConcurrentHashMap<String, String>()
+    private val offlineTimers = ConcurrentHashMap<String, Job>()
 
     @Synchronized
     fun registerService(port: Int) {
@@ -79,6 +91,13 @@ class NsdHelper @Inject constructor(
             this.serviceName = this@NsdHelper.serviceName
             this.serviceType = this@NsdHelper.serviceType
             this.setPort(port)
+            
+            val devId = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "unknown_device"
+            setAttribute("deviceId", devId)
+            setAttribute("name", android.os.Build.MODEL)
+            setAttribute("fingerprint", "FINGERPRINT-$devId-${android.os.Build.MODEL}-SECURE-SALT")
+            setAttribute("version", "1.1.1")
+            setAttribute("capabilities", "browse,download,upload,delete")
         }
 
         val listener = object : NsdManager.RegistrationListener {
@@ -147,7 +166,17 @@ class NsdHelper @Inject constructor(
                 }
             }
 
-            override fun onServiceLost(s: NsdServiceInfo) {}
+            override fun onServiceLost(s: NsdServiceInfo) {
+                val devId = serviceNameToDeviceId[s.serviceName] ?: s.serviceName
+                offlineTimers[devId]?.cancel()
+                offlineTimers[devId] = scope.launch(Dispatchers.IO) {
+                    delay(30000)
+                    connectionManager.setDeviceOnline(devId, false)
+                    serverEventBus.emit(ServerEvent.DeviceOffline(devId))
+                    offlineTimers.remove(devId)
+                }
+            }
+
             override fun onDiscoveryStopped(regType: String) {}
             override fun onStartDiscoveryFailed(st: String, err: Int) {
                 Log.e("NsdHelper", "Discovery Start Fail: $err")
@@ -179,7 +208,34 @@ class NsdHelper @Inject constructor(
             override fun onServiceResolved(s: NsdServiceInfo) {
                 val ip = s.host.hostAddress
                 if (ip != null) {
-                    onResolved(DeviceCandidate(s.serviceName, ip, s.port))
+                    val id = s.attributes["deviceId"]?.let { String(it) } ?: s.serviceName
+                    val name = s.attributes["name"]?.let { String(it) } ?: s.serviceName
+                    val fp = s.attributes["fingerprint"]?.let { String(it) } ?: "FINGERPRINT-$id-$name"
+
+                    serviceNameToDeviceId[s.serviceName] = id
+                    
+                    // Cancel any pending offline timer
+                    offlineTimers[id]?.cancel()
+                    offlineTimers.remove(id)
+
+                    scope.launch(Dispatchers.IO) {
+                        val existing = deviceRepository.getDeviceById(id)
+                        val defaultStatus = existing?.trustStatus ?: "UNKNOWN"
+                        val updated = DeviceEntity(
+                            deviceId = id,
+                            name = name,
+                            ipAddress = ip,
+                            trustStatus = defaultStatus,
+                            lastSeen = System.currentTimeMillis(),
+                            notes = existing?.notes ?: "",
+                            permissions = existing?.permissions ?: "BROWSE_FILES,DOWNLOAD_FILES,UPLOAD_FILES,DELETE_FILES"
+                        )
+                        deviceRepository.insertDevice(updated)
+                        connectionManager.setDeviceOnline(id, true)
+                        serverEventBus.emit(ServerEvent.DeviceOnline(id, ip))
+                    }
+
+                    onResolved(DeviceCandidate(name, ip, s.port))
                 }
             }
         }
@@ -193,7 +249,6 @@ class NsdHelper @Inject constructor(
 
     private fun acquireMulticastLockSafely() {
         try {
-            // Check for permission first
             val hasPermission = context.checkCallingOrSelfPermission(android.Manifest.permission.CHANGE_WIFI_MULTICAST_STATE) == PackageManager.PERMISSION_GRANTED
             if (!hasPermission) {
                 if (_state.value != NsdState.ERROR_DEGRADED) {

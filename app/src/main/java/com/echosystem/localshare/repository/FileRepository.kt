@@ -3,6 +3,7 @@ package com.echosystem.localshare.repository
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.echosystem.localshare.core.StorageManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.FileOutputStream
@@ -12,7 +13,8 @@ import javax.inject.Singleton
 
 @Singleton
 class FileRepository @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val storageManager: StorageManager
 ) {
     fun getFileName(uri: Uri): String? {
         var name: String? = null
@@ -47,7 +49,7 @@ class FileRepository @Inject constructor(
     }
 
     fun saveFile(fileName: String, inputStream: InputStream): File {
-        val downloadDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+        val downloadDir = getReceivedFolder()
         if (!downloadDir.exists()) downloadDir.mkdirs()
         
         val targetFile = File(downloadDir, fileName)
@@ -58,13 +60,13 @@ class FileRepository @Inject constructor(
     }
 
     fun getReceivedFiles(): List<File> {
-        val downloadDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+        val downloadDir = getReceivedFolder()
         if (!downloadDir.exists()) return emptyList()
         return downloadDir.listFiles()?.filter { it.isFile } ?: emptyList()
     }
 
     fun deleteReceivedFile(fileName: String): Boolean {
-        val downloadDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+        val downloadDir = getReceivedFolder()
         val targetFile = File(downloadDir, fileName)
         return if (targetFile.exists()) {
             targetFile.delete()
@@ -74,8 +76,14 @@ class FileRepository @Inject constructor(
     }
 
     fun getReceivedFilesDir(): File {
-        val downloadDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+        val downloadDir = storageManager.rootDir
         if (!downloadDir.exists()) downloadDir.mkdirs()
         return downloadDir
+    }
+
+    fun getReceivedFolder(): File {
+        val folder = File(storageManager.rootDir, "Received")
+        if (!folder.exists()) folder.mkdirs()
+        return folder
     }
 }

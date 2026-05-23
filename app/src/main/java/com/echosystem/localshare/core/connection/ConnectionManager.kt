@@ -57,6 +57,15 @@ class ConnectionManager @Inject constructor(
     private val _connectionState = MutableStateFlow(ConnectionState())
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
+    private val _onlineDevices = MutableStateFlow<Set<String>>(emptySet())
+    val onlineDevices: StateFlow<Set<String>> = _onlineDevices.asStateFlow()
+
+    fun setDeviceOnline(deviceId: String, online: Boolean) {
+        _onlineDevices.update { current ->
+            if (online) current + deviceId else current - deviceId
+        }
+    }
+
     // LAN callback
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 

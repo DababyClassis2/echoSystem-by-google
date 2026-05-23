@@ -3,20 +3,27 @@ package com.echosystem.localshare.security
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.echosystem.localshare.database.DeviceEntity
 import com.echosystem.localshare.model.DevicePermission
 import com.echosystem.localshare.model.TrustedDevice
+import com.echosystem.localshare.repository.DeviceRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
-
 @Singleton
 class TrustManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val deviceRepository: DeviceRepository,
+    private val scope: CoroutineScope
 ) {
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -37,100 +44,113 @@ class TrustManager @Inject constructor(
     val trustedDevices = _trustedDevices.asStateFlow()
 
     init {
-        loadTrustedDevices()
-    }
-
-    @Synchronized
-    fun loadTrustedDevices() {
-        val keys = prefs.all.keys
-        val trustedIds = keys.filter { it.startsWith("trusted_") && prefs.getBoolean(it, false) }
-            .map { it.removePrefix("trusted_") }
-            .toSet()
-        _trustedDeviceIds.value = trustedIds
-
-        // Map all known devices in the prefs
-        val allDeviceIds = keys.filter { it.startsWith("name_") }
-            .map { it.removePrefix("name_") }
-            .distinct()
-
-        val list = allDeviceIds.map { deviceId ->
-            val name = prefs.getString("name_$deviceId", "Unknown Device") ?: "Unknown Device"
-            var fingerprint = prefs.getString("fingerprint_$deviceId", "") ?: ""
-            if (fingerprint.isEmpty()) {
-                fingerprint = generateFingerprint(deviceId, name)
+        scope.launch(Dispatchers.IO) {
+            deviceRepository.allDevices.collect { entities ->
+                val list = entities.map { entity ->
+                    val perms = entity.permissions.split(",")
+                        .filter { it.isNotEmpty() }
+                        .mapNotNull { 
+                            runCatching { DevicePermission.valueOf(it) }.getOrNull() 
+                        }.toSet()
+                    TrustedDevice(
+                        id = entity.deviceId,
+                        name = entity.name,
+                        fingerprint = generateFingerprint(entity.deviceId, entity.name),
+                        note = entity.notes,
+                        blocked = entity.trustStatus == "BLOCKED",
+                        lastSeen = entity.lastSeen,
+                        permissions = perms
+                    )
+                }
+                _trustedDevices.value = list
+                _trustedDeviceIds.value = list.filter { !it.blocked && entities.any { e -> e.deviceId == it.id && e.trustStatus == "TRUSTED" } }.map { it.id }.toSet()
             }
-            val note = prefs.getString("note_$deviceId", "") ?: ""
-            val blocked = prefs.getBoolean("blocked_$deviceId", false)
-            val lastSeen = prefs.getLong("last_seen_$deviceId", System.currentTimeMillis())
-            val permString = prefs.getString("perms_$deviceId", "") ?: ""
-            val perms = permString.split(",")
-                .filter { it.isNotEmpty() }
-                .mapNotNull { 
-                    runCatching { DevicePermission.valueOf(it) }.getOrNull() 
-                }.toSet()
-            
-            TrustedDevice(deviceId, name, fingerprint, note, blocked, lastSeen, perms)
         }
-        _trustedDevices.value = list
     }
 
     fun isDeviceTrusted(deviceId: String): Boolean {
         if (isDeviceBlocked(deviceId)) return false
-        return prefs.getBoolean("trusted_$deviceId", false)
+        val dev = runBlocking { deviceRepository.getDeviceById(deviceId) }
+        return dev?.trustStatus == "TRUSTED"
     }
 
     fun isDeviceBlocked(deviceId: String): Boolean {
-        return prefs.getBoolean("blocked_$deviceId", false)
+        val dev = runBlocking { deviceRepository.getDeviceById(deviceId) }
+        return dev?.trustStatus == "BLOCKED"
     }
 
-    @Synchronized
     fun setDeviceTrust(deviceId: String, deviceName: String, trust: Boolean) {
-        prefs.edit().apply {
-            putBoolean("trusted_$deviceId", trust)
-            putString("name_$deviceId", deviceName)
-            if (trust) {
-                val fingerprint = generateFingerprint(deviceId, deviceName)
-                putString("fingerprint_$deviceId", fingerprint)
-                putLong("last_seen_$deviceId", System.currentTimeMillis())
-            } else {
-                remove("fingerprint_$deviceId")
-            }
-        }.apply()
-        loadTrustedDevices()
+        scope.launch(Dispatchers.IO) {
+            val existing = deviceRepository.getDeviceById(deviceId)
+            val ip = existing?.ipAddress ?: "0.0.0.0"
+            val status = if (trust) "TRUSTED" else "UNKNOWN"
+            val updated = existing?.copy(
+                name = deviceName,
+                trustStatus = status,
+                lastSeen = System.currentTimeMillis()
+            ) ?: DeviceEntity(
+                deviceId = deviceId,
+                name = deviceName,
+                ipAddress = ip,
+                trustStatus = status,
+                lastSeen = System.currentTimeMillis()
+            )
+            deviceRepository.insertDevice(updated)
+        }
     }
 
-    @Synchronized
     fun setDeviceBlocked(deviceId: String, blocked: Boolean) {
-        prefs.edit().apply {
-            putBoolean("blocked_$deviceId", blocked)
-            if (blocked) {
-                putBoolean("trusted_$deviceId", false) // Blocked removes trust
+        scope.launch(Dispatchers.IO) {
+            val existing = deviceRepository.getDeviceById(deviceId)
+            if (existing != null) {
+                val updated = existing.copy(
+                    trustStatus = if (blocked) "BLOCKED" else "TRUSTED"
+                )
+                deviceRepository.insertDevice(updated)
+            } else {
+                val newBlock = DeviceEntity(
+                    deviceId = deviceId,
+                    name = "Blocked Node",
+                    ipAddress = "0.0.0.0",
+                    trustStatus = "BLOCKED",
+                    lastSeen = System.currentTimeMillis()
+                )
+                deviceRepository.insertDevice(newBlock)
             }
-        }.apply()
-        loadTrustedDevices()
+        }
     }
 
-    @Synchronized
     fun setDeviceNote(deviceId: String, note: String) {
-        prefs.edit().putString("note_$deviceId", note).apply()
-        loadTrustedDevices()
+        scope.launch(Dispatchers.IO) {
+            val existing = deviceRepository.getDeviceById(deviceId)
+            if (existing != null) {
+                deviceRepository.insertDevice(existing.copy(notes = note))
+            }
+        }
     }
     
-    @Synchronized
     fun renameDevice(deviceId: String, newName: String) {
-        prefs.edit().putString("name_$deviceId", newName).apply()
-        loadTrustedDevices()
+        scope.launch(Dispatchers.IO) {
+            val existing = deviceRepository.getDeviceById(deviceId)
+            if (existing != null) {
+                deviceRepository.insertDevice(existing.copy(name = newName))
+            }
+        }
     }
 
     fun getFingerprint(deviceId: String): String? {
-        return prefs.getString("fingerprint_$deviceId", null)
+        val dev = runBlocking { deviceRepository.getDeviceById(deviceId) }
+        return dev?.let { generateFingerprint(it.deviceId, it.name) }
     }
 
-    @Synchronized
     fun setDevicePermissions(deviceId: String, permissions: Set<DevicePermission>) {
         val permString = permissions.joinToString(",") { it.name }
-        prefs.edit().putString("perms_$deviceId", permString).apply()
-        loadTrustedDevices()
+        scope.launch(Dispatchers.IO) {
+            val existing = deviceRepository.getDeviceById(deviceId)
+            if (existing != null) {
+                deviceRepository.insertDevice(existing.copy(permissions = permString))
+            }
+        }
     }
 
     fun hasPermission(deviceId: String, permission: DevicePermission): Boolean {
@@ -140,9 +160,9 @@ class TrustManager @Inject constructor(
     }
 
     fun getPermissions(deviceId: String): Set<DevicePermission> {
-        val permString = prefs.getString("perms_$deviceId", "") ?: ""
-        if (permString.isEmpty() && isDeviceTrusted(deviceId)) {
-            // Default permissions for trusted legacy devices
+        val dev = runBlocking { deviceRepository.getDeviceById(deviceId) } ?: return emptySet()
+        val permString = dev.permissions
+        if (permString.isEmpty() && dev.trustStatus == "TRUSTED") {
             return setOf(
                 DevicePermission.BROWSE_FILES,
                 DevicePermission.DOWNLOAD_FILES,

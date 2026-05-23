@@ -3,6 +3,8 @@ package com.echosystem.localshare.server.routes
 import android.content.Context
 import com.echosystem.localshare.model.ServerEvent
 import com.echosystem.localshare.repository.FileRepository
+import com.echosystem.localshare.repository.DeviceRepository
+import com.echosystem.localshare.core.connection.ConnectionManager
 import com.echosystem.localshare.security.PairingManager
 import com.echosystem.localshare.security.TrustManager
 import com.echosystem.localshare.server.ServerEventBus
@@ -13,6 +15,7 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -27,7 +30,33 @@ data class FileWebResponse(
     val formattedSize: String,
     val type: String,
     val extension: String,
-    val isDirectory: Boolean
+    val isDirectory: Boolean,
+    val absolutePath: String,
+    val lastModified: Long
+)
+
+@Serializable
+data class FileWebResult(
+    val path: String,
+    val items: List<FileWebResponse>
+)
+
+@Serializable
+data class MkdirRequest(val path: String)
+
+@Serializable
+data class FileRenameRequest(val oldPath: String, val newPath: String)
+
+@Serializable
+data class DeviceBlockRequest(val deviceId: String)
+
+@Serializable
+data class WebDeviceResponse(
+    val deviceId: String,
+    val name: String,
+    val ip: String,
+    val trustStatus: String,
+    val online: Boolean
 )
 
 fun Route.fileRoutes(
@@ -35,7 +64,9 @@ fun Route.fileRoutes(
     fileRepository: FileRepository,
     serverEventBus: ServerEventBus,
     pairingManager: PairingManager,
-    trustManager: TrustManager
+    trustManager: TrustManager,
+    deviceRepository: DeviceRepository,
+    connectionManager: ConnectionManager
 ) {
     // 1. Serve Mobile-Optimized Web Portal Dashboard
     get("/") {
@@ -89,7 +120,7 @@ fun Route.fileRoutes(
              return@get
         }
 
-        val rootDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+        val rootDir = fileRepository.getReceivedFilesDir()
         val targetDir = if (path.isEmpty()) rootDir else File(rootDir, path)
         
         if (!targetDir.exists() || !targetDir.absolutePath.startsWith(rootDir.absolutePath)) {
@@ -103,10 +134,20 @@ fun Route.fileRoutes(
             val formatted = if (file.isDirectory) "--" else formatBytes(size)
             val ext = file.extension.lowercase()
             val type = if (file.isDirectory) "folder" else getFileTypeCategory(ext)
-            FileWebResponse(file.name, size, formatted, type, ext, file.isDirectory)
+            FileWebResponse(
+                name = file.name,
+                size = size,
+                formattedSize = formatted,
+                type = type,
+                extension = ext,
+                isDirectory = file.isDirectory,
+                absolutePath = file.absolutePath,
+                lastModified = file.lastModified()
+            )
         }.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
         
-        call.respondText(Json.encodeToString(response), ContentType.Application.Json)
+        val result = FileWebResult(path = path, items = response)
+        call.respondText(Json.encodeToString(result), ContentType.Application.Json)
     }
 
     // 3. Download File Stream
@@ -136,7 +177,7 @@ fun Route.fileRoutes(
             return@get
         }
 
-        val rootDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+        val rootDir = fileRepository.getReceivedFilesDir()
         val targetDir = if (path.isEmpty()) rootDir else File(rootDir, path)
         val file = File(targetDir, fileName)
 
@@ -180,7 +221,7 @@ fun Route.fileRoutes(
                     uploadedFileName = part.originalFileName ?: "file_${System.currentTimeMillis()}"
                     
                     withContext(Dispatchers.IO) {
-                        val rootDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+                        val rootDir = fileRepository.getReceivedFilesDir()
                         val targetDir = if (path.isEmpty()) rootDir else File(rootDir, path)
                         
                         if (!targetDir.exists()) targetDir.mkdirs()
@@ -239,8 +280,8 @@ fun Route.fileRoutes(
         }
 
         if (deviceId.isNotEmpty() && !trustManager.hasPermission(deviceId, com.echosystem.localshare.model.DevicePermission.DELETE_FILES)) {
-             call.respond(HttpStatusCode.Forbidden, "Insufficient Permissions to Delete")
-             return@post
+              call.respond(HttpStatusCode.Forbidden, "Insufficient Permissions to Delete")
+              return@post
         }
 
         if (fileName.isEmpty()) {
@@ -248,7 +289,7 @@ fun Route.fileRoutes(
             return@post
         }
 
-        val rootDir = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem")
+        val rootDir = fileRepository.getReceivedFilesDir()
         val targetDir = if (path.isEmpty()) rootDir else File(rootDir, path)
         val file = File(targetDir, fileName)
 
@@ -265,7 +306,7 @@ fun Route.fileRoutes(
         }
     }
 
-    // 6. Get Permissions for specific device (Useful for Web Portal UI hiding)
+    // 6. Get Permissions for specific device
     get("/web/permissions") {
         val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
         val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
@@ -277,6 +318,145 @@ fun Route.fileRoutes(
 
         val perms = trustManager.getPermissions(deviceId)
         call.respond(perms.map { it.name })
+    }
+
+    // New REST brick additions
+
+    post("/web/mkdir") {
+        val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
+        val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
+
+        if (trustManager.isDeviceBlocked(deviceId)) {
+            call.respond(HttpStatusCode.Forbidden, "Access Blocked")
+            return@post
+        }
+        if (!pairingManager.verifyPin(pin) && !pairingManager.isPaired(deviceId)) {
+            call.respond(HttpStatusCode.Unauthorized, "Unauthorized")
+            return@post
+        }
+        if (deviceId.isNotEmpty() && !trustManager.hasPermission(deviceId, com.echosystem.localshare.model.DevicePermission.UPLOAD_FILES)) {
+             call.respond(HttpStatusCode.Forbidden, "Denied")
+             return@post
+        }
+
+        val request = call.receive<MkdirRequest>()
+        val rootDir = fileRepository.getReceivedFilesDir()
+        val targetDir = File(rootDir, request.path)
+
+        if (!targetDir.canonicalPath.startsWith(rootDir.canonicalPath)) {
+            call.respond(HttpStatusCode.Forbidden, "Traversal Blocked")
+            return@post
+        }
+
+        if (!targetDir.exists()) {
+            targetDir.mkdirs()
+        }
+        call.respondText("OK")
+    }
+
+    post("/web/rename") {
+        val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
+        val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
+
+        if (trustManager.isDeviceBlocked(deviceId)) {
+            call.respond(HttpStatusCode.Forbidden, "Access Blocked")
+            return@post
+        }
+        if (!pairingManager.verifyPin(pin) && !pairingManager.isPaired(deviceId)) {
+            call.respond(HttpStatusCode.Unauthorized, "Unauthorized")
+            return@post
+        }
+        if (deviceId.isNotEmpty() && !trustManager.hasPermission(deviceId, com.echosystem.localshare.model.DevicePermission.DELETE_FILES)) {
+             call.respond(HttpStatusCode.Forbidden, "Denied")
+             return@post
+        }
+
+        val request = call.receive<FileRenameRequest>()
+        val rootDir = fileRepository.getReceivedFilesDir()
+        val oldFile = File(rootDir, request.oldPath)
+        val newFile = File(rootDir, request.newPath)
+
+        if (!oldFile.canonicalPath.startsWith(rootDir.canonicalPath) || !newFile.canonicalPath.startsWith(rootDir.canonicalPath)) {
+            call.respond(HttpStatusCode.Forbidden, "Traversal Blocked")
+            return@post
+        }
+
+        if (oldFile.exists() && oldFile.renameTo(newFile)) {
+            call.respondText("OK")
+        } else {
+            call.respond(HttpStatusCode.InternalServerError, "Rename Failed")
+        }
+    }
+
+    get("/web/devices") {
+        val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
+        val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
+
+        if (trustManager.isDeviceBlocked(deviceId)) {
+            call.respond(HttpStatusCode.Forbidden, "Access Blocked")
+            return@get
+        }
+        if (!pairingManager.verifyPin(pin) && !pairingManager.isPaired(deviceId)) {
+            call.respond(HttpStatusCode.Unauthorized, "Unauthorized")
+            return@get
+        }
+
+        val entities = withContext(Dispatchers.IO) { deviceRepository.allDevices.first() }
+        val response = entities.map { entity ->
+            val online = connectionManager.onlineDevices.value.contains(entity.deviceId)
+            WebDeviceResponse(
+                deviceId = entity.deviceId,
+                name = entity.name,
+                ip = entity.ipAddress,
+                trustStatus = entity.trustStatus,
+                online = online
+            )
+        }
+        call.respondText(Json.encodeToString(response), ContentType.Application.Json)
+    }
+
+    post("/web/devices/block") {
+        val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
+        val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
+
+        if (trustManager.isDeviceBlocked(deviceId)) {
+            call.respond(HttpStatusCode.Forbidden, "Access Blocked")
+            return@post
+        }
+        if (!pairingManager.verifyPin(pin) && !pairingManager.isPaired(deviceId)) {
+            call.respond(HttpStatusCode.Unauthorized, "Unauthorized")
+            return@post
+        }
+        if (deviceId.isNotEmpty() && !trustManager.hasPermission(deviceId, com.echosystem.localshare.model.DevicePermission.MANAGE_PERMISSIONS)) {
+             call.respond(HttpStatusCode.Forbidden, "Denied")
+             return@post
+        }
+
+        val request = call.receive<DeviceBlockRequest>()
+        trustManager.setDeviceBlocked(request.deviceId, true)
+        call.respondText("OK")
+    }
+
+    post("/web/devices/unblock") {
+        val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
+        val deviceId = call.request.headers["X-Device-Id"] ?: call.parameters["deviceId"] ?: ""
+
+        if (trustManager.isDeviceBlocked(deviceId)) {
+            call.respond(HttpStatusCode.Forbidden, "Access Blocked")
+            return@post
+        }
+        if (!pairingManager.verifyPin(pin) && !pairingManager.isPaired(deviceId)) {
+            call.respond(HttpStatusCode.Unauthorized, "Unauthorized")
+            return@post
+        }
+        if (deviceId.isNotEmpty() && !trustManager.hasPermission(deviceId, com.echosystem.localshare.model.DevicePermission.MANAGE_PERMISSIONS)) {
+             call.respond(HttpStatusCode.Forbidden, "Denied")
+             return@post
+        }
+
+        val request = call.receive<DeviceBlockRequest>()
+        trustManager.setDeviceBlocked(request.deviceId, false)
+        call.respondText("OK")
     }
 }
 

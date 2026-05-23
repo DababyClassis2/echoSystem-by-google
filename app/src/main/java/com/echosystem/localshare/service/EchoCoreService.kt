@@ -33,6 +33,8 @@ import io.ktor.server.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import javax.inject.Inject
+import java.io.File
+import com.echosystem.localshare.model.ServerEvent
 
 @AndroidEntryPoint
 class EchoCoreService : Service() {
@@ -42,6 +44,8 @@ class EchoCoreService : Service() {
     @Inject lateinit var pairingManager: PairingManager
     @Inject lateinit var trustManager: TrustManager
     @Inject lateinit var serverEventBus: ServerEventBus
+    @Inject lateinit var deviceRepository: com.echosystem.localshare.repository.DeviceRepository
+    @Inject lateinit var connectionManager: com.echosystem.localshare.core.connection.ConnectionManager
 
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
     
@@ -144,6 +148,62 @@ class EchoCoreService : Service() {
     private fun igniteEngines() {
         engineScope.launch { restartNettyServer() }
         discoveryScope.launch { restartDiscoveryServer() }
+        startFileObserver()
+    }
+
+    private var fileObservers = mutableListOf<android.os.FileObserver>()
+
+    private fun startFileObserver() {
+        val rootDir = fileRepository.getReceivedFilesDir()
+        val pathsToObserve = listOf(rootDir, File(rootDir, "Received"), File(rootDir, "Sent"), File(rootDir, "Shared"))
+        
+        pathsToObserve.forEach { dir ->
+            if (!dir.exists()) dir.mkdirs()
+            
+            val observer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                object : android.os.FileObserver(dir, CREATE or DELETE or MODIFY) {
+                    override fun onEvent(event: Int, path: String?) {
+                        if (path == null) return
+                        val evType = when (event) {
+                            CREATE -> "created"
+                            DELETE -> "deleted"
+                            MODIFY -> "modified"
+                            else -> "modified"
+                        }
+                        serverEventBus.tryEmit(ServerEvent.FileChanged(evType, File(dir, path).absolutePath))
+                    }
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                object : android.os.FileObserver(dir.absolutePath, CREATE or DELETE or MODIFY) {
+                    override fun onEvent(event: Int, path: String?) {
+                        if (path == null) return
+                        val evType = when (event) {
+                            CREATE -> "created"
+                            DELETE -> "deleted"
+                            MODIFY -> "modified"
+                            else -> "modified"
+                        }
+                        serverEventBus.tryEmit(ServerEvent.FileChanged(evType, File(dir, path).absolutePath))
+                    }
+                }
+            }
+            try {
+                observer.startWatching()
+                fileObservers.add(observer)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun stopFileObserver() {
+        fileObservers.forEach {
+            try {
+                it.stopWatching()
+            } catch (e: Exception) {}
+        }
+        fileObservers.clear()
     }
 
     private fun startWatchdog() {
@@ -198,7 +258,7 @@ class EchoCoreService : Service() {
                         call.respondText("OK")
                     }
                     deviceRoutes(this@EchoCoreService, pairingManager)
-                    fileRoutes(this@EchoCoreService, fileRepository, serverEventBus, pairingManager, trustManager)
+                    fileRoutes(this@EchoCoreService, fileRepository, serverEventBus, pairingManager, trustManager, deviceRepository, connectionManager)
                     pairingRoutes(pairingManager, trustManager, serverEventBus)
                     webSocketRoutes(serverEventBus)
                     managementRoutes(trustManager, pairingManager)
@@ -253,6 +313,7 @@ class EchoCoreService : Service() {
         serviceScope.cancel()
         engineScope.cancel()
         discoveryScope.cancel()
+        stopFileObserver()
         nsdHelper.unregisterServiceGracefully()
         super.onDestroy()
     }

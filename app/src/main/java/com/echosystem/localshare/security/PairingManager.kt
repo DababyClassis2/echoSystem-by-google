@@ -1,16 +1,24 @@
 package com.echosystem.localshare.security
 
 import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.echosystem.localshare.database.PairingKeyEntity
+import com.echosystem.localshare.repository.DeviceRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.security.KeyPair
+import java.security.KeyPairGenerator
+import java.security.KeyStore
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
 
 @Singleton
 class PairingManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val deviceRepository: DeviceRepository
 ) {
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -25,6 +33,7 @@ class PairingManager @Inject constructor(
     )
 
     private var currentPin: String? = null
+    private val KEY_ALIAS = "com.echosystem.localshare.pairing_key"
 
     fun generatePin(): String {
         val pin = (100000..999999).random().toString()
@@ -70,5 +79,43 @@ class PairingManager @Inject constructor(
             e.printStackTrace()
         }
         return "127.0.0.1"
+    }
+
+    // Modern RSA KeyPair from KeyStore
+    fun getOrCreateLocalKeyPair(): KeyPair {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        if (!keyStore.containsAlias(KEY_ALIAS)) {
+            val kpg = KeyPairGenerator.getInstance(
+                KeyProperties.KEY_ALGORITHM_RSA,
+                "AndroidKeyStore"
+            )
+            val spec = KeyGenParameterSpec.Builder(
+                KEY_ALIAS,
+                KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+            ).run {
+                setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA512)
+                setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
+                setKeySize(2048)
+                build()
+            }
+            kpg.initialize(spec)
+            kpg.generateKeyPair()
+        }
+        val entry = keyStore.getEntry(KEY_ALIAS, null) as KeyStore.PrivateKeyEntry
+        return KeyPair(entry.certificate.publicKey, entry.privateKey)
+    }
+
+    fun getLocalPublicKeyBlob(): ByteArray {
+        val kp = getOrCreateLocalKeyPair()
+        return kp.public.encoded
+    }
+
+    suspend fun saveRemotePublicKey(deviceId: String, publicKeyBytes: ByteArray) {
+        val entity = PairingKeyEntity(deviceId, publicKeyBytes)
+        deviceRepository.insertPairingKey(entity)
+    }
+
+    suspend fun getRemotePublicKey(deviceId: String): ByteArray? {
+        return deviceRepository.getPairingKey(deviceId)?.publicKeyBlob
     }
 }

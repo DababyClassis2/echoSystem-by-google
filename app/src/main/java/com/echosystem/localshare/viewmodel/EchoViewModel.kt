@@ -170,6 +170,16 @@ class EchoViewModel @Inject constructor(
                     }
                 }
             }
+            is ServerEvent.DeviceOnline -> {
+                Log.d("EchoViewModel", "Device Online event: ${event.deviceId} at ${event.ip}")
+            }
+            is ServerEvent.DeviceOffline -> {
+                Log.d("EchoViewModel", "Device Offline event: ${event.deviceId}")
+            }
+            is ServerEvent.FileChanged -> {
+                Log.d("EchoViewModel", "File Changed event: ${event.path}")
+                loadReceivedFiles()
+            }
         }
     }
 
