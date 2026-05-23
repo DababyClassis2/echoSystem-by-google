@@ -63,14 +63,27 @@ data class FileTransfer(
     val fileName: String,
     val size: Long,
     val progress: Float = 0f,
-    val status: TransferStatus = TransferStatus.PENDING,
+    val status: TransferStatus = TransferStatus.QUEUED,
     val isIncoming: Boolean = true,
     val remoteDeviceName: String
 )
 
+@Serializable
 enum class TransferStatus {
-    PENDING, ONGOING, COMPLETED, FAILED
+    QUEUED, TRANSFERRING, PAUSED, COMPLETED, FAILED
 }
+
+@Serializable
+data class TransferProgress(
+    val transferId: String,
+    val fileName: String,
+    val totalBytes: Long,
+    val transferredBytes: Long,
+    val speedBytesPerSec: Long,
+    val etaSeconds: Long,
+    val status: TransferStatus,
+    val errorMessage: String? = null
+)
 
 @Serializable
 enum class DevicePermission {

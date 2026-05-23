@@ -462,7 +462,7 @@ fun TransferItemRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Medium
                     )
-                    if (onDelete != null && transfer.status != TransferStatus.ONGOING) {
+                    if (onDelete != null && transfer.status != TransferStatus.TRANSFERRING) {
                         Spacer(modifier = Modifier.width(6.dp))
                         IconButton(
                             onClick = onDelete,
@@ -480,7 +480,7 @@ fun TransferItemRow(
             }
 
             // Progress Slider and Status Info for active/failed operations
-            if (transfer.status == TransferStatus.ONGOING) {
+            if (transfer.status == TransferStatus.TRANSFERRING) {
                 val animatedProgress by animateFloatAsState(
                     targetValue = transfer.progress,
                     animationSpec = spring(

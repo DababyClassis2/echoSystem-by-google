@@ -1,4 +1,20 @@
 {
   "version": "1.1.1",
-  "releaseType": "ux-and-backend-refinement"
+  "releaseType": "polish",
+  "backend": [
+    "Unified Connection Manager",
+    "Streaming Transfer Engine",
+    "Room Persistence Layer",
+    "RSA Secure Boring",
+    "FileSystem Extensions (REST)",
+    "Real-time WebSocket Events"
+  ],
+  "ui": [
+    "Tap-to-Preview Modals",
+    "Pulse Animation Transitions",
+    "Friendly Empty States",
+    "Nuanced Haptic Feedback",
+    "Constrained Desktop Layout",
+    "Strict Typography Scale"
+  ]
 }

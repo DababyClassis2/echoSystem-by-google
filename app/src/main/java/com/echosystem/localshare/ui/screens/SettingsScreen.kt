@@ -36,8 +36,7 @@ fun SettingsScreen(viewModel: EchoViewModel) {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = "System Parameters",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.ExtraBold,
+                style = MaterialTheme.typography.displayLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
@@ -67,8 +66,7 @@ fun SettingsScreen(viewModel: EchoViewModel) {
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = "Device Display Profile",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            style = MaterialTheme.typography.headlineSmall
                         )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
@@ -123,8 +121,7 @@ fun SettingsScreen(viewModel: EchoViewModel) {
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = "Shield Verification PIN Code",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.headlineSmall,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -146,8 +143,7 @@ fun SettingsScreen(viewModel: EchoViewModel) {
                     ) {
                         Text(
                             text = pin ?: "------",
-                            style = MaterialTheme.typography.headlineLarge,
-                            fontWeight = FontWeight.Black,
+                            style = MaterialTheme.typography.labelMedium.copy(fontSize = 24.sp),
                             color = MaterialTheme.colorScheme.primary,
                             letterSpacing = 4.sp
                         )

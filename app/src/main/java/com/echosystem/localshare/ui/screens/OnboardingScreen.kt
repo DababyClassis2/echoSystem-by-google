@@ -94,8 +94,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
 
                     Text(
                         text = targetPage.title,
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Black,
+                        style = MaterialTheme.typography.displayLarge,
                         textAlign = TextAlign.Center
                     )
 
@@ -103,10 +102,9 @@ fun OnboardingScreen(onFinish: () -> Unit) {
 
                     Text(
                         text = targetPage.description,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 24.sp
+                        textAlign = TextAlign.Center
                     )
                 }
             }
@@ -141,8 +139,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
             ) {
                 Text(
                     text = if (currentPage < pages.size - 1) "Advance" else "Ignite Portal",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
+                    style = MaterialTheme.typography.headlineSmall
                 )
                 if (currentPage < pages.size - 1) {
                     Spacer(Modifier.width(8.dp))

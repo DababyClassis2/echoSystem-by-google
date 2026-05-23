@@ -256,8 +256,7 @@ fun ScanningHeader(nsdState: NsdState) {
                     NsdState.ERROR_DEGRADED -> "Network Degraded: Discovery Limited"
                     NsdState.OFFLINE -> "Radio Offline: Restart Required"
                 },
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.labelMedium
             )
         }
     }
@@ -281,12 +280,11 @@ fun EmptyDevicesState(onScanAgain: () -> Unit) {
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            "No devices found.",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Black
+            "Radar Silence",
+            style = MaterialTheme.typography.displayLarge
         )
         Text(
-            "Make sure you’re on the same Wi‑Fi.",
+            "No nodes found in the echo registry. Ensure friends have the portal open or check your network frequency.",
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -327,13 +325,11 @@ fun MyIdentityBanner(ipAddress: String, pin: String) {
                 Text(
                     text = "My Node Identity",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
+                    color = MaterialTheme.colorScheme.primary
                 )
                 Text(
                     text = ipAddress,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Black
+                    style = MaterialTheme.typography.titleMedium
                 )
             }
             
@@ -351,9 +347,7 @@ fun MyIdentityBanner(ipAddress: String, pin: String) {
                     Text(
                         text = pin,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        style = MaterialTheme.typography.labelMedium
                     )
                 }
             }
@@ -370,7 +364,7 @@ fun RenameDeviceDialog(
     var name by remember { mutableStateOf(currentName) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename Registry Entry") },
+        title = { Text("Rename Registry Entry", style = MaterialTheme.typography.headlineSmall) },
         text = {
             OutlinedTextField(
                 value = name,
@@ -398,7 +392,7 @@ fun PairDeviceDialog(
     var pin by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Secure Pairing Link") },
+        title = { Text("Secure Pairing Link", style = MaterialTheme.typography.headlineSmall) },
         text = {
             Column {
                 Text("Enter the 6-digit Shield Key displayed on $deviceName.")

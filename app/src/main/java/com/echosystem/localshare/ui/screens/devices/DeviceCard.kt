@@ -111,8 +111,7 @@ fun DeviceCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = device.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        style = MaterialTheme.typography.titleMedium
                     )
                     if (isTrusted) {
                         Spacer(modifier = Modifier.width(4.dp))
@@ -126,7 +125,7 @@ fun DeviceCard(
                 }
                 Text(
                     text = "${device.ip}:${device.port}",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -164,8 +163,7 @@ fun StatusIndicator(status: DeviceStatus) {
         Text(
             text = text,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold
+            style = MaterialTheme.typography.labelSmall
         )
     }
 }

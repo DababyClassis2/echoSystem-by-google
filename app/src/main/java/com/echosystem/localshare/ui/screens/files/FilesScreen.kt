@@ -104,7 +104,7 @@ fun FilesScreen(viewModel: EchoViewModel) {
                 .padding(padding)
         ) {
             // Real-time Transfers Section
-            ActiveTransfersSection(transfers = transfers.filter { it.status == TransferStatus.ONGOING })
+            ActiveTransfersSection(transfers = transfers.filter { it.status == TransferStatus.TRANSFERRING })
 
             if (files.isEmpty()) {
                 EmptyFilesState(isRoot = (currentDir.absolutePath == rootDir.absolutePath))
@@ -214,8 +214,7 @@ fun SelectionToolbar(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "$count items selected",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.titleMedium
                 )
             }
             Button(
@@ -260,7 +259,6 @@ fun ActiveTransfersSection(transfers: List<FileTransfer>) {
                 Text(
                     "Synchronizing Mesh Resources",
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
@@ -294,14 +292,13 @@ fun TransferProgressRow(transfer: FileTransfer) {
         ) {
             Text(
                 text = transfer.fileName,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 modifier = Modifier.weight(1f)
             )
             Text(
                 text = "${(transfer.progress * 100).toInt()}%",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Black
+                style = MaterialTheme.typography.labelMedium
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
@@ -335,15 +332,14 @@ fun EmptyFilesState(isRoot: Boolean) {
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            if (isRoot) "Storage Ready" else "Folder is empty",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Black
+            if (isRoot) "Resonance Clear" else "Silent Void",
+            style = MaterialTheme.typography.displayLarge
         )
         Text(
             if (isRoot) {
-                "Your echoSystem storage is ready. Drop files here or tap Upload."
+                "Your echoSystem storage is clean and ready. Share files to see them vibrate here."
             } else {
-                "This folder is empty. Tap + to add files."
+                "This path contains no fragments. Drop something in to start the sync."
             },
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
@@ -362,7 +358,7 @@ fun RenameFileDialog(
     var name by remember { mutableStateOf(currentName) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename System Object") },
+        title = { Text("Rename System Object", style = MaterialTheme.typography.headlineSmall) },
         text = {
             OutlinedTextField(
                 value = name,
@@ -389,7 +385,7 @@ fun SendToDeviceDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Select Mesh Beacon Node", fontWeight = FontWeight.Black) },
+        title = { Text("Select Mesh Beacon Node", style = MaterialTheme.typography.headlineSmall) },
         text = {
             if (devices.isEmpty()) {
                 Box(
@@ -406,9 +402,8 @@ fun SendToDeviceDialog(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "No active peer nodes found.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Bold
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
                             text = "Ensure another device is visible on radar.",
@@ -444,12 +439,11 @@ fun SendToDeviceDialog(
                                 Column {
                                     Text(
                                         text = device.name,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Bold
+                                        style = MaterialTheme.typography.titleMedium
                                     )
                                     Text(
                                         text = "IP: ${device.ip}",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }

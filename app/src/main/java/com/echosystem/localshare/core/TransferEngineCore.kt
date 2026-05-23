@@ -2,6 +2,7 @@ package com.echosystem.localshare.core
 
 import android.net.Uri
 import com.echosystem.localshare.model.FileTransfer
+import com.echosystem.localshare.model.TransferProgress
 import com.echosystem.localshare.model.TransferStatus
 import com.echosystem.localshare.repository.FileRepository
 import com.echosystem.localshare.logging.AppLogger
@@ -10,6 +11,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.io.InputStream
+import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,140 +26,147 @@ class TransferEngineCore @Inject constructor(
     private val tag = "TransferEngineCore"
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    // Tracks current files and tasks queued or transferring
     private val _transferQueue = MutableStateFlow<List<FileTransfer>>(emptyList())
     val transferQueue: StateFlow<List<FileTransfer>> = _transferQueue.asStateFlow()
 
-    // Map to maintain cancelable active coroutine execution jobs for each transfer task ID
+    private val _transferProgress = MutableStateFlow<Map<String, TransferProgress>>(emptyMap())
+    val transferProgress: StateFlow<Map<String, TransferProgress>> = _transferProgress.asStateFlow()
+
     private val activeJobs = mutableMapOf<String, Job>()
-    
-    // Set containing paused transfer task references
     private val pausedTransfers = mutableSetOf<String>()
 
-    /**
-     * Enqueues a new transfer task to the central system core registry.
-     */
-    fun enqueueTransfer(transfer: FileTransfer, fileUri: Uri? = null, onExecute: suspend (FileTransfer, (Float, Long) -> Unit) -> Unit) {
+    private val CHUNK_SIZE = 256 * 1024 // 256 KB
+    private val LARGE_FILE_THRESHOLD = 10 * 1024 * 1024 // 10 MB
+
+    fun enqueueTransfer(
+        transfer: FileTransfer, 
+        uri: Uri?, 
+        onExecute: suspend (FileTransfer, String, (Float, Long) -> Unit) -> Unit
+    ) {
         _transferQueue.update { it + transfer }
-        AppLogger.logEvent(tag, "Enqueued file transfer task: ${transfer.fileName} (${transfer.size} bytes)")
+        
+        val initialProgress = TransferProgress(
+            transferId = transfer.id,
+            fileName = transfer.fileName,
+            totalBytes = transfer.size,
+            transferredBytes = 0L,
+            speedBytesPerSec = 0L,
+            etaSeconds = -1L,
+            status = TransferStatus.QUEUED
+        )
+        _transferProgress.update { it + (transfer.id to initialProgress) }
         
         eventBus.tryEmit(CoreEvent.TransferStarted(transfer.id, transfer.fileName, transfer.size))
-        
-        // Spawn asynchronous concurrent worker bound to local task lifecycle
-        val transferJob = scope.launch {
+
+        val job = scope.launch {
             try {
-                updateStatus(transfer.id, TransferStatus.ONGOING)
-                var lastProgressTime = System.currentTimeMillis()
-                var lastBytesTransferred = 0L
+                // SHA-256 Integrity Check (Brick 2)
+                val checksum = if (uri != null) calculateSha256(uri) else ""
+                
+                updateStatus(transfer.id, TransferStatus.TRANSFERRING)
+                
+                val startTime = System.currentTimeMillis()
+                var lastUpdate = startTime
+                var bytesTransferred = 0L
 
-                onExecute(transfer) { progress, bytesTransferredDelta ->
-                    // Guard against executing paused blocks
-                    if (isPaused(transfer.id)) {
-                        throw CancellationException("Transfer ${transfer.id} paused by supervisor.")
-                    }
-
-                    updateProgress(transfer.id, progress)
+                onExecute(transfer, checksum) { progress, deltaBytes ->
+                    if (isPaused(transfer.id)) throw CancellationException("Paused")
                     
-                    // Update streaming speed in tracking modules
+                    bytesTransferred += deltaBytes
                     val now = System.currentTimeMillis()
-                    val timeDelta = (now - lastProgressTime).coerceAtLeast(1)
-                    val speedBps = (bytesTransferredDelta * 1000.0) / timeDelta
                     
-                    performanceTracker.recordTransferProgress(
-                        activeTransfersCount = activeJobs.size,
-                        speedBps = speedBps,
-                        deltaBytes = bytesTransferredDelta
-                    )
+                    if (now - lastUpdate >= 500) {
+                        val elapsed = (now - startTime) / 1000.0
+                        val speed = if (elapsed > 0) (bytesTransferred / elapsed).toLong() else 0L
+                        val remaining = transfer.size - bytesTransferred
+                        val eta = if (speed > 0) remaining / speed else -1L
+                        
+                        _transferProgress.update { map ->
+                            map + (transfer.id to (map[transfer.id] ?: initialProgress).copy(
+                                transferredBytes = bytesTransferred,
+                                speedBytesPerSec = speed,
+                                etaSeconds = eta,
+                                status = TransferStatus.TRANSFERRING
+                            ))
+                        }
+                        lastUpdate = now
+                    }
                     
-                    eventBus.tryEmit(CoreEvent.TransferProgress(transfer.id, progress, speedBps))
-                    
-                    lastProgressTime = now
-                    performanceTracker.recordAttempt(true)
+                    performanceTracker.recordTransferProgress(activeJobs.size, 0.0, deltaBytes)
+                    eventBus.tryEmit(CoreEvent.TransferProgress(transfer.id, progress, 0.0))
                 }
 
                 updateStatus(transfer.id, TransferStatus.COMPLETED)
                 eventBus.tryEmit(CoreEvent.TransferCompleted(transfer.id))
-                AppLogger.logEvent(tag, "Successfully finalized transfer: ${transfer.fileName}")
             } catch (ce: CancellationException) {
-                // Task was canceled or paused
                 if (isPaused(transfer.id)) {
-                    AppLogger.logEvent(tag, "Transfer ${transfer.id} (${transfer.fileName}) successfully flagged as PAUSED.")
+                    updateStatus(transfer.id, TransferStatus.PAUSED)
                 } else {
-                    updateStatus(transfer.id, TransferStatus.FAILED)
-                    eventBus.tryEmit(CoreEvent.TransferFailed(transfer.id, "Transfer was canceled by user."))
-                    AppLogger.logEvent(tag, "Cancelled transfer task: ${transfer.fileName}")
+                    updateStatus(transfer.id, TransferStatus.FAILED, "Cancelled by user")
+                    eventBus.tryEmit(CoreEvent.TransferFailed(transfer.id, "User Cancellation"))
                 }
             } catch (t: Throwable) {
-                performanceTracker.recordAttempt(false)
-                val cleanError = errorHandler.reportError(t, "TransferEngineCore_Task_${transfer.id}")
-                updateStatus(transfer.id, TransferStatus.FAILED)
+                val cleanError = errorHandler.reportError(t, "Engine_Task_${transfer.id}")
+                updateStatus(transfer.id, TransferStatus.FAILED, cleanError)
+                eventBus.tryEmit(CoreEvent.TransferFailed(transfer.id, cleanError))
             } finally {
                 activeJobs.remove(transfer.id)
             }
         }
-        
-        activeJobs[transfer.id] = transferJob
+        activeJobs[transfer.id] = job
     }
 
-    /**
-     * Pauses an active transfer job.
-     */
-    fun pauseTransfer(transferId: String) {
-        pausedTransfers.add(transferId)
-        activeJobs[transferId]?.cancel(CancellationException("Pause requested."))
-        activeJobs.remove(transferId)
-        
-        _transferQueue.update { queue ->
-            queue.map { if (it.id == transferId) it.copy(status = TransferStatus.PENDING) else it }
+    private fun calculateSha256(uri: Uri): String {
+        return try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            fileRepository.openInputStream(uri)?.use { inputStream ->
+                val buffer = ByteArray(8192)
+                var bytesRead: Int
+                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                    digest.update(buffer, 0, bytesRead)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            AppLogger.logEvent(tag, "Checksum calculation failed: ${e.message}")
+            ""
         }
     }
 
-    /**
-     * Resumes a paused transfer task.
-     */
-    fun resumeTransfer(transferId: String, onExecute: suspend (FileTransfer, (Float, Long) -> Unit) -> Unit) {
-        pausedTransfers.remove(transferId)
-        val transfer = _transferQueue.value.find { it.id == transferId }
-        if (transfer != null) {
-            enqueueTransfer(transfer, null, onExecute)
+    private fun updateStatus(id: String, status: TransferStatus, error: String? = null) {
+        _transferProgress.update { map ->
+            map[id]?.let {
+                map + (id to it.copy(status = status, errorMessage = error))
+            } ?: map
         }
-    }
-
-    /**
-     * Cancels / aborts an active transfer task.
-     */
-    fun cancelTransfer(transferId: String) {
-        pausedTransfers.remove(transferId)
-        activeJobs[transferId]?.cancel()
-        activeJobs.remove(transferId)
-        
-        _transferQueue.update { queue ->
-            queue.map { if (it.id == transferId) it.copy(status = TransferStatus.FAILED, progress = 0f) else it }
-        }
-    }
-
-    /**
-     * Prioritizes a specific transfer file ahead of others in queue.
-     */
-    fun prioritizeTransfer(transferId: String) {
-        _transferQueue.update { queue ->
-            val target = queue.find { it.id == transferId } ?: return@update queue
-            val filtered = queue.filter { it.id != transferId }
-            listOf(target) + filtered // move task to front of buffer queue
-        }
-    }
-
-    fun isPaused(transferId: String): Boolean = pausedTransfers.contains(transferId)
-
-    private fun updateStatus(id: String, status: TransferStatus) {
         _transferQueue.update { list ->
             list.map { if (it.id == id) it.copy(status = status) else it }
         }
     }
 
-    private fun updateProgress(id: String, progress: Float) {
-        _transferQueue.update { list ->
-            list.map { if (it.id == id) it.copy(progress = progress) else it }
+    fun pauseTransfer(id: String) {
+        pausedTransfers.add(id)
+        activeJobs[id]?.cancel(CancellationException("Paused"))
+    }
+
+    fun resumeTransfer(id: String, uri: Uri?, onExecute: suspend (FileTransfer, String, (Float, Long) -> Unit) -> Unit) {
+        pausedTransfers.remove(id)
+        _transferQueue.value.find { it.id == id }?.let {
+            enqueueTransfer(it, uri, onExecute)
         }
     }
+
+    fun cancelTransfer(id: String) {
+        pausedTransfers.remove(id)
+        activeJobs[id]?.cancel()
+    }
+
+    fun prioritizeTransfer(id: String) {
+        _transferQueue.update { queue ->
+            val target = queue.find { it.id == id } ?: return@update queue
+            listOf(target) + queue.filter { it.id != id }
+        }
+    }
+
+    private fun isPaused(id: String) = pausedTransfers.contains(id)
 }

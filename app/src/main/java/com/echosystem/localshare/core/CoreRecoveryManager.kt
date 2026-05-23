@@ -26,7 +26,7 @@ class CoreRecoveryManager @Inject constructor(
         
         val currentQueue = transferEngine.transferQueue.value
         val interuptedTasks = currentQueue.filter { 
-            it.status == TransferStatus.ONGOING || it.status == TransferStatus.PENDING 
+            it.status == TransferStatus.TRANSFERRING || it.status == TransferStatus.QUEUED 
         }
 
         if (interuptedTasks.isNotEmpty()) {
@@ -55,7 +55,7 @@ class CoreRecoveryManager @Inject constructor(
             if (match != null) {
                 AppLogger.logEvent(tag, "Partner verified online at IP: ${match.ip}. Auto-restoring transport pipelines...")
                 // Auto-resume task using core engine
-                transferEngine.resumeTransfer(transfer.id) { resolvedTask, updateProgress ->
+                transferEngine.resumeTransfer(transfer.id, null) { resolvedTask, _, updateProgress ->
                     // Stream mock blocks representing chunk writing validation
                     var virtualProgress = transfer.progress
                     while (virtualProgress < 0.99f) {
@@ -66,7 +66,7 @@ class CoreRecoveryManager @Inject constructor(
                     }
                 }
             } else {
-                AppLogger.logEvent(tag, "Partner ${transfer.remoteDeviceName} offline. Leaving task in PENDING state for auto-discovery watchdogs.")
+                AppLogger.logEvent(tag, "Partner ${transfer.remoteDeviceName} offline. Leaving task in QUEUED state for auto-discovery watchdogs.")
             }
         }
     }

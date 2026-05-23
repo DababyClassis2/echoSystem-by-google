@@ -24,7 +24,9 @@ import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
+import io.ktor.client.utils.EmptyContent.contentType
 import io.ktor.http.*
+import io.ktor.utils.io.streams.asInput
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.io.InputStream
@@ -33,6 +35,9 @@ import javax.inject.Inject
 
 import com.echosystem.localshare.security.TrustManager
 import com.echosystem.localshare.core.CoreSystemSupervisor
+import com.echosystem.localshare.core.TransferEngineCore
+import com.echosystem.localshare.core.connection.ConnectionManager
+import com.echosystem.localshare.core.connection.ConnectionState
 
 @HiltViewModel
 class EchoViewModel @Inject constructor(
@@ -44,7 +49,9 @@ class EchoViewModel @Inject constructor(
     private val nsdHelper: NsdHelper,
     private val httpClient: HttpClient,
     private val serverEventBus: ServerEventBus,
-    val coreSystemSupervisor: CoreSystemSupervisor
+    val coreSystemSupervisor: CoreSystemSupervisor,
+    val connectionManager: ConnectionManager,
+    private val transferEngine: TransferEngineCore
 ) : ViewModel() {
 
     val devices: StateFlow<List<Device>> = deviceRegistry.deviceList
@@ -64,6 +71,12 @@ class EchoViewModel @Inject constructor(
 
     private val _transferProgress = MutableStateFlow<List<FileTransfer>>(emptyList())
     val transferProgress: StateFlow<List<FileTransfer>> = _transferProgress.asStateFlow()
+
+    // Sync TransferEngineCore queue to UI
+    val engineQueue: StateFlow<List<FileTransfer>> = transferEngine.transferQueue
+    val engineProgress = transferEngine.transferProgress
+    
+    val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
 
     private val _pairingPin = MutableStateFlow<String?>(null)
     val pairingPin: StateFlow<String?> = _pairingPin.asStateFlow()
@@ -91,7 +104,7 @@ class EchoViewModel @Inject constructor(
     init {
         // Register telemetry providers for System Performance watchdog
         com.echosystem.localshare.logging.PerformanceMonitor.registerSpeedProvider {
-            val ongoingCount = _transferProgress.value.count { it.status == TransferStatus.ONGOING }
+            val ongoingCount = _transferProgress.value.count { it.status == TransferStatus.TRANSFERRING }
             Pair(ongoingCount, 0.0)
         }
         com.echosystem.localshare.logging.PerformanceMonitor.startMonitoring(viewModelScope)
@@ -140,7 +153,7 @@ class EchoViewModel @Inject constructor(
                         id = event.fileId,
                         fileName = event.fileName,
                         size = event.size,
-                        status = TransferStatus.ONGOING,
+                        status = TransferStatus.TRANSFERRING,
                         isIncoming = true,
                         remoteDeviceName = "Nearby Portal"
                     )
@@ -177,9 +190,11 @@ class EchoViewModel @Inject constructor(
             }
             is ServerEvent.DeviceOnline -> {
                 Log.d("EchoViewModel", "Device Online event: ${event.deviceId} at ${event.ip}")
+                connectionManager.setDeviceOnline(event.deviceId, true)
             }
             is ServerEvent.DeviceOffline -> {
                 Log.d("EchoViewModel", "Device Offline event: ${event.deviceId}")
+                connectionManager.setDeviceOnline(event.deviceId, false)
             }
             is ServerEvent.FileChanged -> {
                 Log.d("EchoViewModel", "File Changed event: ${event.path}")
@@ -272,125 +287,42 @@ class EchoViewModel @Inject constructor(
     }
 
     fun sendFileToDevice(device: Device, uri: Uri) {
-        viewModelScope.launch {
-            val fileName = fileRepository.getFileName(uri) ?: "unknown_file"
-            val fileSize = fileRepository.getFileSize(uri)
-            
-            val transfer = FileTransfer(
-                id = System.currentTimeMillis().toString(),
-                fileName = fileName,
-                size = fileSize,
-                status = TransferStatus.ONGOING,
-                isIncoming = false,
-                remoteDeviceName = device.name
-            )
-            
-            _transferProgress.update { it + transfer }
-            
-            val adaptiveBlockSize = coreSystemSupervisor.getAdaptiveBlockSize()
-            AppLogger.logEvent("EchoViewModel", "Starting outgoing transfer of $fileName ($fileSize bytes) to ${device.name} - Adaptive buffer chunk allocation size: ${adaptiveBlockSize / 1024} KB")
-
-            try {
-                val inputStream = fileRepository.openInputStream(uri) ?: return@launch
+        val fileName = fileRepository.getFileName(uri) ?: "unknown_file"
+        val fileSize = fileRepository.getFileSize(uri)
+        
+        val transfer = FileTransfer(
+            id = System.currentTimeMillis().toString(),
+            fileName = fileName,
+            size = fileSize,
+            status = TransferStatus.QUEUED,
+            isIncoming = false,
+            remoteDeviceName = device.name
+        )
+        
+        transferEngine.enqueueTransfer(transfer, uri) { task, checksum, updateProgress ->
+            // SHA-256 integrity metadata can be sent if server supports it (X-Integrity-SHA256)
+            coreSystemSupervisor.runWithAutoRetry(device) { resolvedIp ->
+                val inputStream = fileRepository.openInputStream(uri) ?: return@runWithAutoRetry
                 
-                // execute within auto-retry and stability failover logic
-                val response: HttpResponse = coreSystemSupervisor.runWithAutoRetry(device) { resolvedIp ->
-                    httpClient.post("http://$resolvedIp:${device.port}/transfer/upload") {
-                        setBody(MultiPartFormDataContent(
-                            formData {
-                                append("file", inputStream.readBytes(), Headers.build {
-                                    append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
-                                })
-                            }
-                        ))
-                        onUpload { bytesSentTotal, contentLength ->
-                            val progressValue = if (contentLength != null && contentLength > 0L) {
-                                bytesSentTotal.toFloat() / contentLength
-                            } else {
-                                0f
-                            }
-                            updateTransferProgress(transfer.id, progressValue)
+                httpClient.post("http://$resolvedIp:${device.port}/transfer/upload") {
+                    header("X-Integrity-SHA256", checksum)
+                    setBody(MultiPartFormDataContent(
+                        formData {
+                            append("file", inputStream.asInput(), Headers.build {
+                                append(HttpHeaders.ContentDisposition, "filename=\"${task.fileName}\"")
+                            })
                         }
+                    ))
+                    onUpload { bytesSentTotal, _ ->
+                        updateProgress(bytesSentTotal.toFloat() / fileSize, bytesSentTotal)
                     }
                 }
-
-                if (response.status == HttpStatusCode.OK) {
-                    updateTransferStatus(transfer.id, TransferStatus.COMPLETED)
-                    AppNotificationManager.notifyFileSent(context, fileName, "Completed")
-                    AppLogger.logEvent("EchoViewModel", "Outgoing transfer successfully completed: $fileName")
-                } else {
-                    updateTransferStatus(transfer.id, TransferStatus.FAILED)
-                    AppNotificationManager.notifyTransferFailed(context, "Sending $fileName failed: Status ${response.status}")
-                    AppLogger.logEvent("EchoViewModel", "Outgoing transfer failed for $fileName: Status ${response.status}")
-                }
-            } catch (e: Exception) {
-                updateTransferStatus(transfer.id, TransferStatus.FAILED)
-                AppNotificationManager.notifyTransferFailed(context, "Sending $fileName failed: ${e.localizedMessage}")
-                AppLogger.logEvent("EchoViewModel", "Outgoing transfer failed for $fileName with exception: ${e.message}")
             }
         }
     }
 
     fun sendMultipleFilesToDevice(device: Device, uris: List<Uri>) {
-        viewModelScope.launch {
-            uris.forEach { uri ->
-                val fileName = fileRepository.getFileName(uri) ?: "unknown_file"
-                val fileSize = fileRepository.getFileSize(uri)
-                
-                val transfer = FileTransfer(
-                    id = System.currentTimeMillis().toString() + "_" + (1000..9999).random(),
-                    fileName = fileName,
-                    size = fileSize,
-                    status = TransferStatus.ONGOING,
-                    isIncoming = false,
-                    remoteDeviceName = device.name
-                )
-                
-                _transferProgress.update { it + transfer }
-                
-                try {
-                    val inputStream = fileRepository.openInputStream(uri)
-                    if (inputStream == null) {
-                        updateTransferStatus(transfer.id, TransferStatus.FAILED)
-                        return@forEach
-                    }
-                    
-                    val response: HttpResponse = coreSystemSupervisor.runWithAutoRetry(device) { resolvedIp ->
-                        httpClient.post("http://$resolvedIp:${device.port}/transfer/upload") {
-                            setBody(MultiPartFormDataContent(
-                                formData {
-                                    append("file", inputStream.readBytes(), Headers.build {
-                                        append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
-                                    })
-                                }
-                            ))
-                            onUpload { bytesSentTotal, contentLength ->
-                                val progressValue = if (contentLength != null && contentLength > 0L) {
-                                    bytesSentTotal.toFloat() / contentLength
-                                } else {
-                                    0f
-                                }
-                                updateTransferProgress(transfer.id, progressValue)
-                            }
-                        }
-                    }
-
-                    if (response.status == HttpStatusCode.OK) {
-                        updateTransferStatus(transfer.id, TransferStatus.COMPLETED)
-                        AppNotificationManager.notifyFileSent(context, fileName, "Completed")
-                        AppLogger.logEvent("EchoViewModel", "Outgoing transfer successfully completed: $fileName")
-                    } else {
-                        updateTransferStatus(transfer.id, TransferStatus.FAILED)
-                        AppNotificationManager.notifyTransferFailed(context, "Sending $fileName failed: Status ${response.status}")
-                        AppLogger.logEvent("EchoViewModel", "Outgoing transfer failed for $fileName: Status ${response.status}")
-                    }
-                } catch (e: Exception) {
-                    updateTransferStatus(transfer.id, TransferStatus.FAILED)
-                    AppNotificationManager.notifyTransferFailed(context, "Sending $fileName failed: ${e.localizedMessage}")
-                    AppLogger.logEvent("EchoViewModel", "Outgoing transfer failed for $fileName with exception: ${e.message}")
-                }
-            }
-        }
+        uris.forEach { uri -> sendFileToDevice(device, uri) }
     }
 
     fun queryFileName(uri: android.net.Uri): String {
@@ -434,7 +366,7 @@ class EchoViewModel @Inject constructor(
                 val fileNamesOnDisk = files.map { it.name }.toSet()
                 
                 _transferProgress.update { currentList ->
-                    val ongoingTransfers = currentList.filter { it.status == TransferStatus.ONGOING }
+                    val ongoingTransfers = currentList.filter { it.status == TransferStatus.TRANSFERRING }
                     val existingCompletedOnDisk = currentList.filter {
                         it.status == TransferStatus.COMPLETED && fileNamesOnDisk.contains(it.fileName)
                     }

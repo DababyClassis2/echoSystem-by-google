@@ -52,12 +52,11 @@ fun WebShareScreen(
             )
             Text(
                 "Web Portal 2.0",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Black
+                style = MaterialTheme.typography.displayLarge
             )
             Text(
                 "Access your local mesh from any browser without installing the proxy APK.",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(bottom = 24.dp)
@@ -105,9 +104,7 @@ fun WebShareScreen(
                         )
                         Text(
                             genuinePin.value,
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.Black,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            style = MaterialTheme.typography.labelMedium.copy(fontSize = 24.sp),
                             letterSpacing = 4.sp
                         )
                     }
@@ -140,8 +137,7 @@ fun EmptyPortalState() {
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             "Waiting for Ignition",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
+            style = MaterialTheme.typography.displayLarge
         )
         Text(
             "Ignite the portal engine to start broadcasting the local mesh to your network.",

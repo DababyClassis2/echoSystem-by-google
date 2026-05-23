@@ -1,9 +1,8 @@
 package com.echosystem.localshare.core
 
-import android.content.Context
 import com.echosystem.localshare.core.connection.ConnectionManager
+import com.echosystem.localshare.core.connection.ConnectionState
 import com.echosystem.localshare.logging.AppLogger
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,8 +13,6 @@ import javax.inject.Singleton
 
 @Singleton
 class NetworkModeManager @Inject constructor(
-    @ApplicationContext private val context: Context,
-    private val eventBus: CoreEventBus,
     private val connectionManager: ConnectionManager,
     private val scope: CoroutineScope
 ) {
@@ -25,44 +22,41 @@ class NetworkModeManager @Inject constructor(
     val currentMode: StateFlow<NetworkMode> = _currentMode.asStateFlow()
 
     init {
+        // Observer pattern: Syncing legacy currentMode with the new Unified ConnectionManager
         scope.launch {
             connectionManager.connectionState.collect { state ->
-                val oldMode = _currentMode.value
-                val targetMode = state.currentMode
-                if (oldMode != targetMode) {
-                    _currentMode.value = targetMode
-                    AppLogger.logEvent(tag, "Local Network Mode synchronized to: $targetMode")
+                when (state) {
+                    is ConnectionState.Connected -> {
+                        _currentMode.value = state.mode
+                        AppLogger.logEvent(tag, "Unified Engine synced: Current Mode is ${state.mode}")
+                    }
+                    is ConnectionState.Connecting -> {
+                        _currentMode.value = state.mode
+                    }
+                    else -> {}
                 }
             }
         }
     }
 
-    /**
-     * Inspects active interfaces to decide on the most favorable direct mode.
-     */
-    fun selectBestMode(): NetworkMode {
-        return connectionManager.selectBestMode()
-    }
-
-    /**
-     * Safe mode transitioner; delegates to unified ConnectionManager.
-     */
     fun switchMode(targetMode: NetworkMode) {
+        AppLogger.logEvent(tag, "Mode change requested: $targetMode. Delegating to Unified ConnectionManager.")
         connectionManager.setNetworkMode(targetMode)
     }
 
-    /**
-     * Failover routine when direct client-side pairing drops.
-     */
+    fun selectBestMode(): NetworkMode {
+        // In the refinement, we trust the current state or choose LAN as safest default
+        return _currentMode.value
+    }
+
     fun fallbackIfModeFails() {
-        val failingMode = _currentMode.value
-        val nextMode = when (failingMode) {
+        // Failover routine: Cycle through available modes
+        val nextMode = when (_currentMode.value) {
             NetworkMode.LAN -> NetworkMode.WIFI_DIRECT
             NetworkMode.WIFI_DIRECT -> NetworkMode.HOTSPOT
             NetworkMode.HOTSPOT -> NetworkMode.WEB_DASHBOARD
-            NetworkMode.WEB_DASHBOARD -> NetworkMode.LAN // cycle gracefully
+            NetworkMode.WEB_DASHBOARD -> NetworkMode.LAN
         }
-        AppLogger.logEvent(tag, "Failover Trigger: $failingMode degraded. Repositioning to: $nextMode")
         switchMode(nextMode)
     }
 }

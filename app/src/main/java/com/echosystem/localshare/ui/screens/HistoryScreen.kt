@@ -65,8 +65,7 @@ fun HistoryScreen(viewModel: EchoViewModel) {
             Column {
                 Text(
                     text = "Transmission Ledger",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold,
+                    style = MaterialTheme.typography.displayLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
@@ -113,14 +112,13 @@ fun HistoryScreen(viewModel: EchoViewModel) {
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "No transfers yet",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Black,
+                        text = "The Ledger is Empty",
+                        style = MaterialTheme.typography.displayLarge,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Sent or received files will appear here.",
+                        text = "Your data silence is golden. Transferred items and mesh synchronization logs will appear here.",
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -224,13 +222,12 @@ fun TransferItemRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = transfer.fileName,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 1
                 )
                 Text(
                     text = if (transfer.isIncoming) "From: ${transfer.remoteDeviceName}" else "To: ${transfer.remoteDeviceName}",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -251,7 +248,7 @@ fun FilePreviewModal(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.InsertDriveFile, contentDescription = null, modifier = Modifier.size(40.dp)) },
-        title = { Text(transfer.fileName, fontWeight = FontWeight.Black) },
+        title = { Text(transfer.fileName, style = MaterialTheme.typography.displayLarge) },
         text = {
             Column {
                 Text("Remote Contact: ${transfer.remoteDeviceName}")
