@@ -195,6 +195,13 @@ class EchoViewModel @Inject constructor(
 
     fun acceptPairing(event: ServerEvent.PairingRequest) {
         pairingManager.markAsPaired(event.deviceId)
+        trustManager.setDeviceTrust(event.deviceId, event.deviceName, true)
+        trustManager.setDevicePermissions(event.deviceId, setOf(
+            com.echosystem.localshare.model.DevicePermission.BROWSE_FILES,
+            com.echosystem.localshare.model.DevicePermission.DOWNLOAD_FILES,
+            com.echosystem.localshare.model.DevicePermission.UPLOAD_FILES,
+            com.echosystem.localshare.model.DevicePermission.DELETE_FILES
+        ))
         deviceRegistry.updateDevicePairingStatus(event.deviceId, true)
         deviceRegistry.updateDeviceStatus(event.deviceId, com.echosystem.localshare.model.DeviceStatus.CONNECTED)
         _incomingPairingRequest.value = null

@@ -1,3 +1,7 @@
+import java.net.URL
+import java.io.File
+import java.net.URI
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.android)
@@ -157,3 +161,51 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+val targetWebDir = layout.projectDirectory.dir("src/main/assets/web").asFile
+
+tasks.register("downloadWebAssets") {
+  val targetDir = targetWebDir
+  inputs.property("url_tailwind", "https://cdn.tailwindcss.com")
+  inputs.property("url_lucide", "https://unpkg.com/lucide@0.453.0/dist/umd/lucide.min.js")
+  outputs.dir(targetDir)
+
+  doLast {
+    if (!targetDir.exists()) {
+      targetDir.mkdirs()
+    }
+    
+    val tailwindFile = File(targetDir, "tailwind.js")
+    if (!tailwindFile.exists()) {
+      println("Downloading tailwind.js for offline gateway capabilities...")
+      try {
+        URI.create("https://cdn.tailwindcss.com").toURL().openStream().use { input ->
+          tailwindFile.outputStream().use { output ->
+            input.copyTo(output)
+          }
+        }
+      } catch (e: Exception) {
+        println("Failed to download Tailwind: ${e.message}")
+      }
+    }
+    
+    val lucideFile = File(targetDir, "lucide.min.js")
+    if (!lucideFile.exists()) {
+      println("Downloading lucide.min.js for offline gateway capabilities...")
+      try {
+        URI.create("https://unpkg.com/lucide@0.453.0/dist/umd/lucide.min.js").toURL().openStream().use { input ->
+          lucideFile.outputStream().use { output ->
+            input.copyTo(output)
+          }
+        }
+      } catch (e: Exception) {
+        println("Failed to download Lucide: ${e.message}")
+      }
+    }
+  }
+}
+
+tasks.named("preBuild") {
+  dependsOn("downloadWebAssets")
+}
+

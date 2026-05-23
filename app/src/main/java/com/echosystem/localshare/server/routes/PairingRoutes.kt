@@ -31,6 +31,13 @@ fun Route.pairingRoutes(pairingManager: PairingManager, trustManager: TrustManag
         
         if (isTrusted || pairingManager.verifyPin(request.pin)) {
             pairingManager.markAsPaired(request.deviceId)
+            trustManager.setDeviceTrust(request.deviceId, deviceName, true)
+            trustManager.setDevicePermissions(request.deviceId, setOf(
+                com.echosystem.localshare.model.DevicePermission.BROWSE_FILES,
+                com.echosystem.localshare.model.DevicePermission.DOWNLOAD_FILES,
+                com.echosystem.localshare.model.DevicePermission.UPLOAD_FILES,
+                com.echosystem.localshare.model.DevicePermission.DELETE_FILES
+            ))
             call.respond(HttpStatusCode.OK, "Paired")
         } else {
             // We still emit the event above to allow manual acceptance even if PIN is wrong/missing

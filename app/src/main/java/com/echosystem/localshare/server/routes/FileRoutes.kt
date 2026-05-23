@@ -47,6 +47,27 @@ fun Route.fileRoutes(
         }
     }
 
+    // Serve Web static assets (Local JS & CSS) to enable 100% offline usage
+    get("/{filename}") {
+        val filename = call.parameters["filename"] ?: ""
+        val allowedFiles = listOf("dashboard.js", "dashboard.css", "tailwind.js", "lucide.min.js")
+        if (filename in allowedFiles) {
+            try {
+                val contentType = when {
+                    filename.endsWith(".js") -> ContentType.Application.JavaScript
+                    filename.endsWith(".css") -> ContentType.Text.CSS
+                    else -> ContentType.Text.Plain
+                }
+                val contentBytes = context.assets.open("web/$filename").use { it.readBytes() }
+                call.respondBytes(contentBytes, contentType)
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.NotFound)
+            }
+        } else {
+            call.respond(HttpStatusCode.NotFound)
+        }
+    }
+
     // 2. Query Available Downloadable Files with Category Metadata
     get("/web/files") {
         val pin = call.request.headers["X-PIN"] ?: call.parameters["pin"] ?: ""
