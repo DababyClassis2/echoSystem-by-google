@@ -30,7 +30,26 @@ import com.echosystem.localshare.viewmodel.EchoViewModel
 fun HistoryScreen(viewModel: EchoViewModel) {
     val transfers by viewModel.transferProgress.collectAsState()
     var activePreviewTransfer by remember { mutableStateOf<FileTransfer?>(null) }
-    val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
+
+    // [V1.1.1] Monitor for transfer edge completions to trigger haptics
+    var lastCompletedCount by remember { mutableIntStateOf(0) }
+    var lastFailedCount by remember { mutableIntStateOf(0) }
+    
+    LaunchedEffect(transfers) {
+        val completed = transfers.count { it.status == TransferStatus.COMPLETED }
+        val failed = transfers.count { it.status == TransferStatus.FAILED }
+        
+        if (completed > lastCompletedCount) {
+            com.echosystem.localshare.util.HapticUtil.success(context)
+        }
+        if (failed > lastFailedCount) {
+            com.echosystem.localshare.util.HapticUtil.error(context)
+        }
+        
+        lastCompletedCount = completed
+        lastFailedCount = failed
+    }
 
     Column(
         modifier = Modifier
@@ -59,9 +78,7 @@ fun HistoryScreen(viewModel: EchoViewModel) {
             if (transfers.isNotEmpty()) {
                 IconButton(
                     onClick = {
-                        try {
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                        } catch (e: Exception) {}
+                        com.echosystem.localshare.util.HapticUtil.lightTap(context)
                         viewModel.clearTransfers()
                     },
                     colors = IconButtonDefaults.iconButtonColors(
@@ -130,9 +147,7 @@ fun HistoryScreen(viewModel: EchoViewModel) {
                                 )
                             )
                             .clickable {
-                                try {
-                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                } catch (e: Exception) {}
+                                com.echosystem.localshare.util.HapticUtil.lightTap(context)
                                 activePreviewTransfer = transfer
                             }
                     ) {

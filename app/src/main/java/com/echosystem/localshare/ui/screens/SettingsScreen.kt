@@ -23,7 +23,6 @@ import com.echosystem.localshare.viewmodel.EchoViewModel
 fun SettingsScreen(viewModel: EchoViewModel) {
     val pin by viewModel.pairingPin.collectAsState()
     val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
 
     var customDeviceName by remember { mutableStateOf(android.os.Build.MODEL) }
 
@@ -77,9 +76,7 @@ fun SettingsScreen(viewModel: EchoViewModel) {
                         value = customDeviceName,
                         onValueChange = {
                             customDeviceName = it
-                            try {
-                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                            } catch (e: Exception) {}
+                            com.echosystem.localshare.util.HapticUtil.lightTap(context)
                         },
                         label = { Text("Display Broadcast Name") },
                         singleLine = true,
@@ -160,9 +157,7 @@ fun SettingsScreen(viewModel: EchoViewModel) {
 
                     Button(
                         onClick = {
-                            try {
-                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            } catch (e: Exception) {}
+                            com.echosystem.localshare.util.HapticUtil.lightTap(context)
                             viewModel.generatePairingPin()
                         },
                         modifier = Modifier

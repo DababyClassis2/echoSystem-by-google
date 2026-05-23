@@ -45,3 +45,17 @@ This update represents a complete stability, security, validation, and performan
   - Subfolder: "This folder is empty. Tap + to add files."
 - **History Screen**: Added a clear, centered "No transfers yet" state with a descriptive call to action.
 - **Web Dashboard**: Updated the file grid with a centered "Nothing here yet" state featuring a `cloud-upload` icon and Indonesian Indo-Mesh indigo aesthetic.
+- **Desktop Layout Refinement**: Constrained wide-screen content to `max-w-6xl` while maintaining full-width branding backgrounds for a professional desktop presence.
+- **Responsive File Grid**: Optimized grid columns for all screen sizes (from 2 to 5 columns) with improved spacing.
+- **Card Polishing**: Added tactile hover feedback (scale and shadow) for all file/folder cards.
+- **Centered Sync Engine**: Centered the upload queue at the bottom with constrained width for better focus on wide monitors.
+
+### 8. Haptic & Visual Feedback (v1.1.1 Supplemental)
+- **Haptic Patterns**: Created `HapticUtil` for Android to provide distinct tactile feedback:
+  - **Light Tap**: Short pulse for all standard buttons and navigation tabs.
+  - **Success**: Long heavy vibration for pairing success and transfer completion.
+  - **Error**: Double short pulse for pairing failures and transfer errors.
+- **Visual Pulse Animations**: 
+  - **Mobile**: Dynamic green/red border pulse on `DeviceCard` (600ms) triggered by pairing results.
+  - **Web**: Implemented CSS shake animations for errors and green flash-to-fade transitions for successful queue completions.
+- **Connection Status**: Added a synchronized pulsing dot to the Web Dashboard status indicator for constant connection health awareness.

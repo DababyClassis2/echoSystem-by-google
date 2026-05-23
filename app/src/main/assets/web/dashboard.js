@@ -78,7 +78,7 @@ function updateStatus(online) {
     const dot = document.getElementById('statusDot');
     const text = document.getElementById('statusText');
     if (online) {
-        dot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]";
+        dot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981] animate-status-pulse";
         text.textContent = "Node Synchronized";
         text.className = "text-[10px] font-black uppercase tracking-widest text-emerald-500";
     } else {
@@ -188,7 +188,7 @@ function renderContent() {
 
     filtered.forEach((item, idx) => {
         const card = document.createElement('div');
-        card.className = "file-card glass rounded-3xl p-5 flex flex-col gap-4 animate-slide cursor-pointer";
+        card.className = "file-card glass rounded-3xl p-5 flex flex-col gap-4 animate-slide cursor-pointer hover:shadow-lg hover:-translate-y-1 transition-all duration-200";
         card.style.animationDelay = `${idx * 20}ms`;
         card.onclick = (e) => {
             // Only trigger if we didn't click a button specifically
@@ -530,13 +530,20 @@ function syncFile(file) {
     
     xhr.onload = () => {
         if (xhr.status === 200) {
-            document.getElementById(id).classList.add('border-emerald-500/30', 'bg-emerald-500/5');
+            row.classList.add('flash-success');
+            document.getElementById(`pct-${id}`).innerHTML = '<i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>';
+            lucide.createIcons();
+            
             setTimeout(() => {
-                document.getElementById(id).remove();
+                row.remove();
                 updateQueueCount();
                 if (!queueList.children.length) queueSection.classList.add('queue-hidden');
-            }, 3000);
+            }, 4000);
             loadContent();
+        } else {
+            row.classList.add('flash-error');
+            document.getElementById(`pct-${id}`).textContent = "Failed";
+            document.getElementById(`pct-${id}`).classList.replace('text-indigo-400', 'text-red-400');
         }
     };
     xhr.send(fd);

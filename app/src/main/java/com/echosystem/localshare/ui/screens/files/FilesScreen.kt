@@ -16,6 +16,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -29,6 +32,7 @@ import java.io.File
 
 @Composable
 fun FilesScreen(viewModel: EchoViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val currentDir by viewModel.currentDir.collectAsState(initial = File(android.os.Environment.getExternalStorageDirectory(), "echoSystem"))
     val files by viewModel.browserFiles.collectAsState(initial = emptyList())
     val selectedFiles by viewModel.selectedFiles.collectAsState(initial = emptySet<File>())
@@ -48,6 +52,18 @@ fun FilesScreen(viewModel: EchoViewModel) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
+            // [V1.1.1] Monitor for transfer edge completions to trigger haptic feedback
+            var lastCompletedCount by remember { mutableIntStateOf(0) }
+            var lastFailedCount by remember { mutableIntStateOf(0) }
+            LaunchedEffect(transfers) {
+                val completed = transfers.count { it.status == TransferStatus.COMPLETED }
+                val failed = transfers.count { it.status == TransferStatus.FAILED }
+                if (completed > lastCompletedCount) com.echosystem.localshare.util.HapticUtil.success(context)
+                if (failed > lastFailedCount) com.echosystem.localshare.util.HapticUtil.error(context)
+                lastCompletedCount = completed
+                lastFailedCount = failed
+            }
+
             Column {
                 FolderTree(
                     currentDir = currentDir,
@@ -70,7 +86,10 @@ fun FilesScreen(viewModel: EchoViewModel) {
         floatingActionButton = {
             if (selectedFiles.isEmpty()) {
                 FloatingActionButton(
-                    onClick = { viewModel.refreshBrowserFiles() },
+                    onClick = { 
+                        com.echosystem.localshare.util.HapticUtil.lightTap(context)
+                        viewModel.refreshBrowserFiles() 
+                    },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
@@ -174,6 +193,7 @@ fun SelectionToolbar(
     onClear: () -> Unit,
     onShowActions: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Surface(
         color = MaterialTheme.colorScheme.primary,
         contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -185,7 +205,10 @@ fun SelectionToolbar(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClear) {
+                IconButton(onClick = {
+                    com.echosystem.localshare.util.HapticUtil.lightTap(context)
+                    onClear()
+                }) {
                     Icon(Icons.Default.Close, contentDescription = "Clear Selection")
                 }
                 Spacer(modifier = Modifier.width(8.dp))
@@ -196,7 +219,10 @@ fun SelectionToolbar(
                 )
             }
             Button(
-                onClick = onShowActions,
+                onClick = {
+                    com.echosystem.localshare.util.HapticUtil.lightTap(context)
+                    onShowActions()
+                },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.onPrimary,
                     contentColor = MaterialTheme.colorScheme.primary

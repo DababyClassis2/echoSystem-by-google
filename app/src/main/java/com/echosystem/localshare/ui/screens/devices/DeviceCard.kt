@@ -12,23 +12,60 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.echosystem.localshare.model.Device
 import com.echosystem.localshare.model.DeviceStatus
 
+import androidx.compose.ui.platform.LocalContext
+import com.echosystem.localshare.util.HapticUtil
+import kotlinx.coroutines.flow.filter
+
 @Composable
 fun DeviceCard(
     device: Device,
     isTrusted: Boolean,
+    pairingResults: kotlinx.coroutines.flow.Flow<com.echosystem.localshare.viewmodel.EchoViewModel.PairingResult>? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    var pulseColor by remember { mutableStateOf(Color.Transparent) }
+    val animatedBorderColor by animateColorAsState(
+        targetValue = pulseColor,
+        animationSpec = tween(600),
+        finishedListener = { pulseColor = Color.Transparent },
+        label = "pulse_animation"
+    )
+
+    LaunchedEffect(pairingResults) {
+        pairingResults?.filter { it.deviceId == device.id }?.collect { result ->
+            if (result.success) {
+                pulseColor = Color(0xFF4CAF50) // Pulse Green
+                HapticUtil.success(context)
+            } else {
+                pulseColor = Color.Red // Pulse Red
+                HapticUtil.error(context)
+            }
+        }
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onClick() },
+            .clickable { 
+                HapticUtil.lightTap(context)
+                onClick() 
+            }
+            .then(
+                if (pulseColor != Color.Transparent) {
+                    Modifier.border(2.dp, animatedBorderColor, MaterialTheme.shapes.medium)
+                } else Modifier
+            ),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)
         ),

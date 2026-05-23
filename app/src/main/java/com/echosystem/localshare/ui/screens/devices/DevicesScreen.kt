@@ -147,6 +147,7 @@ fun DevicesScreen(viewModel: EchoViewModel) {
                             DeviceCard(
                                 device = device,
                                 isTrusted = trustedIds.contains(device.id),
+                                pairingResults = viewModel.pairingResults,
                                 onClick = { selectedDevice = device }
                             )
                         }
@@ -156,8 +157,12 @@ fun DevicesScreen(viewModel: EchoViewModel) {
         }
 
         // Floating Action Button Overlay
+        val context = androidx.compose.ui.platform.LocalContext.current
         FloatingActionButton(
-            onClick = { viewModel.startDiscovery() },
+            onClick = { 
+                com.echosystem.localshare.util.HapticUtil.lightTap(context)
+                viewModel.startDiscovery() 
+            },
             containerColor = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier
@@ -260,6 +265,7 @@ fun ScanningHeader(nsdState: NsdState) {
 
 @Composable
 fun EmptyDevicesState(onScanAgain: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -287,7 +293,10 @@ fun EmptyDevicesState(onScanAgain: () -> Unit) {
             modifier = Modifier.padding(top = 8.dp, bottom = 24.dp)
         )
         Button(
-            onClick = onScanAgain,
+            onClick = {
+                com.echosystem.localshare.util.HapticUtil.lightTap(context)
+                onScanAgain()
+            },
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary

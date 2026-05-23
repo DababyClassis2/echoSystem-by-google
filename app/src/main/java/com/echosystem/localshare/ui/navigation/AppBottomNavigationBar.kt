@@ -14,7 +14,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 
 @Composable
 fun AppBottomNavigationBar(navController: NavController) {
-    val haptic = LocalHapticFeedback.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
@@ -32,7 +32,7 @@ fun AppBottomNavigationBar(navController: NavController) {
                 label = { Text(screen.title, style = MaterialTheme.typography.labelSmall) },
                 selected = currentRoute == screen.route,
                 onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    com.echosystem.localshare.util.HapticUtil.lightTap(context)
                     navController.navigate(screen.route) {
                         popUpTo(navController.graph.findStartDestination().id) {
                             saveState = true

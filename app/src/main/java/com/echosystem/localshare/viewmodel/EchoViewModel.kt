@@ -68,6 +68,11 @@ class EchoViewModel @Inject constructor(
     private val _pairingPin = MutableStateFlow<String?>(null)
     val pairingPin: StateFlow<String?> = _pairingPin.asStateFlow()
 
+    // [V1.1.1] Pairing result flow for UI animations and haptics
+    data class PairingResult(val deviceId: String, val success: Boolean)
+    private val _pairingResults = MutableSharedFlow<PairingResult>()
+    val pairingResults = _pairingResults.asSharedFlow()
+
     private val _incomingPairingRequest = MutableStateFlow<ServerEvent.PairingRequest?>(null)
     val incomingPairingRequest = _incomingPairingRequest.asStateFlow()
 
@@ -216,6 +221,10 @@ class EchoViewModel @Inject constructor(
         deviceRegistry.updateDeviceStatus(event.deviceId, com.echosystem.localshare.model.DeviceStatus.CONNECTED)
         _incomingPairingRequest.value = null
         AppLogger.logEvent("EchoViewModel", "Accepted pairing request from ${event.deviceName} (${event.deviceId})")
+        
+        viewModelScope.launch {
+            _pairingResults.emit(PairingResult(event.deviceId, true))
+        }
     }
 
     fun rejectPairing(event: ServerEvent.PairingRequest) {
@@ -249,11 +258,14 @@ class EchoViewModel @Inject constructor(
                 if (response.status == HttpStatusCode.OK) {
                     pairingManager.markAsPaired(device.id)
                     deviceRegistry.updateDeviceStatus(device.id, com.echosystem.localshare.model.DeviceStatus.CONNECTED)
+                    _pairingResults.emit(PairingResult(device.id, true))
                     onResult(true, null)
                 } else {
+                    _pairingResults.emit(PairingResult(device.id, false))
                     onResult(false, "Verification failed: Status ${response.status}")
                 }
             } catch (e: Exception) {
+                _pairingResults.emit(PairingResult(device.id, false))
                 onResult(false, e.localizedMessage ?: "Connection error")
             }
         }
