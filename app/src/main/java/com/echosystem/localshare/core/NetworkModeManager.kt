@@ -1,20 +1,23 @@
 package com.echosystem.localshare.core
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
+import com.echosystem.localshare.core.connection.ConnectionManager
 import com.echosystem.localshare.logging.AppLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class NetworkModeManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val eventBus: CoreEventBus
+    private val eventBus: CoreEventBus,
+    private val connectionManager: ConnectionManager,
+    private val scope: CoroutineScope
 ) {
     private val tag = "NetworkModeManager"
     
@@ -22,46 +25,30 @@ class NetworkModeManager @Inject constructor(
     val currentMode: StateFlow<NetworkMode> = _currentMode.asStateFlow()
 
     init {
-        // Initial auto-evaluation matching existing network parameters
-        selectBestMode()
+        scope.launch {
+            connectionManager.connectionState.collect { state ->
+                val oldMode = _currentMode.value
+                val targetMode = state.currentMode
+                if (oldMode != targetMode) {
+                    _currentMode.value = targetMode
+                    AppLogger.logEvent(tag, "Local Network Mode synchronized to: $targetMode")
+                }
+            }
+        }
     }
 
     /**
      * Inspects active interfaces to decide on the most favorable direct mode.
      */
     fun selectBestMode(): NetworkMode {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val activeNetwork = connectivityManager.activeNetwork
-        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
-        
-        val chosenMode = if (capabilities != null) {
-            when {
-                // If attached over standard Wi-Fi, Ethernet or local direct connections
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> NetworkMode.LAN
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> NetworkMode.LAN
-                // Fallback to offline configurations
-                else -> NetworkMode.WIFI_DIRECT
-            }
-        } else {
-            NetworkMode.HOTSPOT // offline hotspot defaults
-        }
-
-        switchMode(chosenMode)
-        return chosenMode
+        return connectionManager.selectBestMode()
     }
 
     /**
-     * Safe mode transitioner; emits CoreEvents to app subscribers.
+     * Safe mode transitioner; delegates to unified ConnectionManager.
      */
     fun switchMode(targetMode: NetworkMode) {
-        val oldMode = _currentMode.value
-        if (oldMode != targetMode) {
-            _currentMode.value = targetMode
-            AppLogger.logEvent(tag, "Changing active network channel from $oldMode to $targetMode")
-            
-            // Dispatch event to allow server netty endpoints or companion VMs to adjust ports/insets
-            eventBus.tryEmit(CoreEvent.NetworkModeChanged(oldMode, targetMode))
-        }
+        connectionManager.setNetworkMode(targetMode)
     }
 
     /**
